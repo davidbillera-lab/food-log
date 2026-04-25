@@ -875,11 +875,11 @@ async function runClaude() {
   }
 }
 
-async function fetchClaude(key, messages, hasImage, useSearch = false, systemOverride = null) {
+async function fetchClaude(key, messages, hasImage, useSearch = false, systemOverride = null, maxTokens = 1024) {
   const needsSonnet = hasImage || useSearch;
   const model = needsSonnet ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001';
   const system = systemOverride !== null ? systemOverride : (hasImage ? SYSTEM_PROMPT_VISION : SYSTEM_PROMPT_TEXT);
-  const body = { model, max_tokens: 1024, system, messages };
+  const body = { model, max_tokens: maxTokens, system, messages };
   if (needsSonnet) body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
 
   const res = await fetch('/proxy/messages', {
@@ -1096,13 +1096,26 @@ async function lookupRestaurantPrice() {
   const btn = document.getElementById('rest-lookup-btn');
   btn.disabled = true; btn.textContent = '⏳ Looking up...';
 
-  const LOOKUP_SYSTEM = 'You are a restaurant menu price assistant. You know current US restaurant menu prices well. Given a restaurant item, return your best estimate of the current US price and nutrition. Respond with ONLY this raw JSON (no markdown, no other text): {"price":9.99,"calories":550,"protein":25,"carbs":45,"fat":22}';
+  const LOOKUP_SYSTEM = `You are a restaurant menu price assistant.
+- For well-known national or regional chains (McDonald's, In-N-Out, Chipotle, Starbucks, Chick-fil-A, Subway, etc.) answer from your training knowledge — do NOT search.
+- For local, small, or unfamiliar restaurants, use web_search to find the menu price from their website or a reliable source.
+After getting the price, respond with ONLY this raw JSON (no markdown, no other text): {"price":9.99,"calories":550,"protein":25,"carbs":45,"fat":22}`;
   try {
-    const msgs = [{
+    let msgs = [{
       role: 'user',
-      content: `What is the current US menu price and nutrition for: "${name}"? Return only the JSON.`
+      content: `Find the current US menu price and nutrition for: "${name}". Return only the JSON.`
     }];
-    const response = await fetchClaude(getApiKey(), msgs, false, false, LOOKUP_SYSTEM);
+    let response = await fetchClaude(getApiKey(), msgs, false, true, LOOKUP_SYSTEM, 2048);
+    let safety = 0;
+    while (response.stop_reason === 'tool_use' && safety++ < 5) {
+      const toolBlocks = response.content.filter(b => b.type === 'tool_use');
+      msgs.push({ role: 'assistant', content: response.content });
+      msgs.push({ role: 'user', content: toolBlocks.map(b => ({
+        type: 'tool_result', tool_use_id: b.id,
+        content: b.content || []
+      }))});
+      response = await fetchClaude(getApiKey(), msgs, false, true, LOOKUP_SYSTEM, 2048);
+    }
     const text = response.content.find(b => b.type === 'text')?.text || '';
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('No price data in response');
