@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JJ Billera Food Log</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 14px; background: #f5f5f5; height: 100dvh; display: flex; flex-direction: column; }
+
+  /* ── Header ── */
+  header {
+    background: #1a73e8; color: white; padding: 10px 14px;
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  header h1 { font-size: 15px; white-space: nowrap; }
+  #search {
+    flex: 1; padding: 8px 12px; border-radius: 20px; border: none;
+    font-size: 14px; outline: none; min-width: 0;
+  }
+  .header-btns { display: flex; gap: 8px; }
+  .icon-btn {
+    background: rgba(255,255,255,0.2); border: none; color: white;
+    border-radius: 50%; width: 38px; height: 38px; cursor: pointer;
+    font-size: 18px; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .icon-btn:hover { background: rgba(255,255,255,0.35); }
+
+  .app { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Sidebar (desktop: vertical strip) ── */
+  #sidebar {
+    width: 110px; background: white; border-right: 1px solid #ddd;
+    overflow-y: auto; flex-shrink: 0;
+  }
+  #sidebar .date-item {
+    padding: 11px 10px; cursor: pointer; border-bottom: 1px solid #f0f0f0;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px;
+  }
+  #sidebar .date-item:hover { background: #e8f0fe; }
+  #sidebar .date-item.active { background: #1a73e8; color: white; }
+  #sidebar .dot { width: 7px; height: 7px; border-radius: 50%; background: #34a853; flex-shrink: 0; }
+  #sidebar .date-item.active .dot { background: white; }
+
+  /* ── Main panel ── */
+  #main { flex: 1; overflow-y: auto; padding: 14px; }
+
+  .panel-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+  }
+  .panel-header h2 { font-size: 15px; color: #333; }
+
+  .monthly-cost {
+    background: #e8f5e9; border: 1px solid #a5d6a7;
+    border-radius: 6px; padding: 8px 12px; font-weight: bold;
+    color: #2e7d32; font-size: 13px; display: flex; gap: 10px;
+    align-items: center; flex-wrap: wrap;
+  }
+  .monthly-nutrition { font-size: 11px; font-weight: normal; color: #555; }
+
+  /* ── Entry table ── */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; background: white; border-radius: 6px;
+    overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.1); min-width: 560px; }
+  th { background: #f8f9fa; padding: 9px 10px; text-align: left; font-size: 12px;
+    color: #555; border-bottom: 2px solid #ddd; white-space: nowrap; }
+  td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  .ingr-list { font-size: 11px; color: #555; }
+  .ingr-list span { display: block; }
+  .delete-btn { background: none; border: none; color: #e53935; cursor: pointer;
+    font-size: 20px; padding: 4px 6px; min-width: 36px; min-height: 36px; }
+  .empty-msg { color: #999; font-style: italic; text-align: center; padding: 24px; }
+
+  /* ── Action buttons ── */
+  .action-btns { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .add-btn {
+    background: #1a73e8; color: white; border: none; border-radius: 6px;
+    padding: 10px 18px; cursor: pointer; font-size: 14px; flex: 1; min-width: 130px;
+  }
+  .add-btn:hover { background: #1557b0; }
+  .ai-btn {
+    background: #7c4dff; color: white; border: none; border-radius: 6px;
+    padding: 10px 18px; cursor: pointer; font-size: 14px; flex: 1; min-width: 130px;
+  }
+  .ai-btn:hover { background: #6200ea; }
+  .export-btn {
+    background: #34a853; color: white; border: none; border-radius: 6px;
+    padding: 10px 18px; cursor: pointer; font-size: 14px; flex: 1; min-width: 130px;
+  }
+  .export-btn:hover { background: #2d8f47; }
+
+  /* Export preview table */
+  .export-table { border-collapse: collapse; min-width: 680px; width: 100%; font-size: 12px; }
+  .export-table th { background: #e8f5e9; padding: 6px 8px; text-align: left;
+    border: 1px solid #b2dfdb; white-space: nowrap; font-size: 11px; color: #2e7d32; }
+  .export-table td { border: 1px solid #ddd; padding: 1px; }
+  .export-table td input { width: 100%; border: none; padding: 5px 6px;
+    font-size: 12px; background: transparent; min-width: 60px; }
+  .export-table td input:focus { background: #fffde7; outline: none; }
+  .export-table tr:last-child td { background: #f1f8e9; }
+  .export-table tr:last-child td input { font-weight: bold; color: #2e7d32; }
+
+  /* ── Manual form ── */
+  #form-container {
+    background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.15);
+    padding: 16px; margin-bottom: 16px; display: none;
+  }
+  #form-container h3 { margin-bottom: 14px; font-size: 15px; color: #333; }
+  .form-row { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .form-row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px;
+    color: #555; flex: 1; min-width: 120px; }
+  .form-row select, .form-row input[type=text] {
+    padding: 9px 10px; border: 1px solid #ccc; border-radius: 6px;
+    font-size: 15px; width: 100%;
+  }
+  .name-wrap { display: flex; align-items: center; gap: 6px; }
+  .name-wrap input { flex: 1; min-width: 0; }
+  .mic-btn {
+    background: none; border: 1px solid #ccc; border-radius: 6px;
+    padding: 6px 8px; cursor: pointer; font-size: 16px; line-height: 1;
+    color: #555; min-width: 36px; min-height: 36px;
+  }
+  .mic-btn.listening { background: #fce8e6; border-color: #e53935; color: #e53935; }
+  .autofill-btn {
+    background: #7c4dff; color: white; border: none; border-radius: 6px;
+    padding: 6px 10px; cursor: pointer; font-size: 13px; white-space: nowrap;
+    min-height: 36px;
+  }
+  .autofill-btn:hover { background: #6200ea; }
+  .autofill-btn:disabled { background: #ccc; cursor: default; }
+
+  .ingr-section { margin-top: 12px; }
+  .ingr-section h4 { font-size: 13px; color: #555; margin-bottom: 8px; }
+  #ingr-rows .ingr-row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  #ingr-rows input { padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; flex: 1; min-width: 80px; }
+  #ingr-rows input.ingr-cost { max-width: 90px; flex: 0 0 90px; }
+  .remove-ingr { background: none; border: none; color: #e53935; cursor: pointer;
+    font-size: 20px; min-width: 36px; min-height: 36px; padding: 0 4px; }
+  #add-ingr-btn {
+    background: none; border: 1px dashed #aaa; border-radius: 6px;
+    padding: 8px 14px; cursor: pointer; font-size: 13px; color: #555; margin-top: 4px;
+    width: 100%;
+  }
+  #add-ingr-btn:hover { background: #f0f0f0; }
+  .form-actions { display: flex; gap: 10px; margin-top: 14px; }
+  .save-btn { background: #34a853; color: white; border: none; border-radius: 6px;
+    padding: 11px 20px; cursor: pointer; font-size: 15px; flex: 1; }
+  .cancel-btn { background: white; color: #555; border: 1px solid #ccc; border-radius: 6px;
+    padding: 11px 16px; cursor: pointer; font-size: 15px; }
+
+  /* ── Modals ── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5); z-index: 100;
+    align-items: flex-end; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: white; border-radius: 14px 14px 0 0; width: 100%; max-width: 480px;
+    box-shadow: 0 -4px 24px rgba(0,0,0,.2); overflow: hidden;
+    max-height: 92dvh; display: flex; flex-direction: column;
+  }
+  .modal-header {
+    background: #7c4dff; color: white; padding: 16px;
+    display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+  }
+  .modal-header h3 { font-size: 16px; }
+  .modal-close { background: none; border: none; color: white; font-size: 24px;
+    cursor: pointer; line-height: 1; min-width: 36px; min-height: 36px; }
+  .modal-body { padding: 20px; overflow-y: auto; }
+
+  /* AI Capture */
+  .capture-options { display: flex; gap: 12px; margin-bottom: 16px; }
+  .capture-option {
+    flex: 1; padding: 22px 10px; border: 2px solid #e0e0e0; border-radius: 10px;
+    cursor: pointer; text-align: center; transition: all .15s; background: white;
+  }
+  .capture-option:hover, .capture-option:active { border-color: #7c4dff; background: #f3eeff; }
+  .capture-option .icon { font-size: 36px; display: block; margin-bottom: 8px; }
+  .capture-option .label { font-size: 14px; font-weight: bold; color: #333; }
+  .capture-option .sub { font-size: 12px; color: #888; margin-top: 3px; }
+
+  #ai-chat { display: none; }
+  .ai-status {
+    text-align: center; padding: 12px; color: #7c4dff;
+    font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .spinner {
+    width: 16px; height: 16px; border: 2px solid #e0e0e0;
+    border-top-color: #7c4dff; border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .chat-bubble {
+    padding: 10px 14px; border-radius: 14px; margin-bottom: 8px;
+    max-width: 85%; font-size: 14px; line-height: 1.4;
+  }
+  .bubble-ai { background: #f3eeff; color: #333; border-radius: 14px 14px 14px 0; }
+  .bubble-user { background: #1a73e8; color: white; border-radius: 14px 14px 0 14px; margin-left: auto; }
+  .chat-input-row { display: flex; gap: 8px; margin-top: 12px; }
+  .chat-input-row input {
+    flex: 1; padding: 10px 14px; border: 1px solid #ccc; border-radius: 22px;
+    font-size: 15px; outline: none; min-width: 0;
+  }
+  .chat-input-row input:focus { border-color: #7c4dff; }
+  .chat-send-btn {
+    background: #7c4dff; color: white; border: none; border-radius: 50%;
+    width: 42px; height: 42px; cursor: pointer; font-size: 18px; flex-shrink: 0;
+  }
+  .chat-mic-btn {
+    background: none; border: 1px solid #ccc; border-radius: 50%;
+    width: 42px; height: 42px; cursor: pointer; font-size: 18px; flex-shrink: 0;
+  }
+  .chat-mic-btn.listening { background: #fce8e6; border-color: #e53935; }
+
+  #img-preview { width: 100%; border-radius: 10px; margin-bottom: 12px; display: none; max-height: 200px; object-fit: cover; }
+
+  /* Settings modal */
+  #settings-modal .modal { border-radius: 14px 14px 0 0; }
+  #settings-modal .modal-header { background: #1a73e8; }
+  .settings-row { margin-bottom: 16px; }
+  .settings-row label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; }
+  .settings-row input {
+    width: 100%; padding: 10px 12px; border: 1px solid #ccc;
+    border-radius: 6px; font-size: 14px; font-family: monospace;
+  }
+  .settings-note { font-size: 12px; color: #888; margin-top: 5px; }
+  .settings-save-btn {
+    background: #1a73e8; color: white; border: none; border-radius: 6px;
+    padding: 12px; cursor: pointer; font-size: 15px; width: 100%;
+  }
+  .key-status { font-size: 13px; margin-top: 10px; text-align: center; }
+  .key-status.ok { color: #34a853; }
+  .key-status.missing { color: #e53935; }
+
+  .highlight { background: #fff176; }
+
+  /* ── Mobile: sidebar becomes horizontal date bar ── */
+  @media (max-width: 640px) {
+    .app { flex-direction: column; }
+
+    #sidebar {
+      width: 100%; height: auto; border-right: none;
+      border-bottom: 1px solid #ddd;
+      display: flex; flex-direction: row;
+      overflow-x: auto; overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      flex-shrink: 0;
+    }
+    #sidebar .date-item {
+      flex-direction: column; align-items: center; justify-content: center;
+      padding: 8px 14px; border-bottom: none; border-right: 1px solid #f0f0f0;
+      white-space: nowrap; gap: 4px; font-size: 12px;
+    }
+    #sidebar .dot { margin: 0; }
+
+    #main { padding: 12px; }
+
+    .panel-header { flex-direction: column; align-items: stretch; }
+    .monthly-cost { justify-content: center; }
+
+    .modal-overlay { align-items: flex-end; }
+    .modal { border-radius: 16px 16px 0 0; max-height: 90dvh; }
+  }
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>JJ Billera Food Log</h1>
+  <input id="search" type="text" placeholder="Search meals or ingredients..." oninput="onSearch()">
+  <div class="header-btns">
+    <button class="icon-btn" onclick="openSettings()" title="Settings">⚙️</button>
+  </div>
+</header>
+
+<div class="app">
+  <div id="sidebar"></div>
+  <div id="main">
+    <div class="panel-header">
+      <h2 id="panel-title">Select a date</h2>
+      <div class="monthly-cost">
+        Monthly Cost: <span id="monthly-cost">$0.00</span>
+        <span class="monthly-nutrition" id="monthly-nutrition"></span>
+      </div>
+    </div>
+
+    <div id="form-container">
+      <h3>Add Meal Manually</h3>
+      <div class="form-row">
+        <label>Meal
+          <select id="f-meal">
+            <option value="B">Breakfast</option>
+            <option value="L">Lunch</option>
+            <option value="D">Dinner</option>
+            <option value="S">Snack</option>
+          </select>
+        </label>
+        <label>Type
+          <select id="f-type" onchange="toggleIngredients()">
+            <option value="home">Home</option>
+            <option value="restaurant">Restaurant</option>
+          </select>
+        </label>
+        <label>Name of Meal
+          <div class="name-wrap">
+            <input type="text" id="f-name" placeholder="e.g. Oatmeal">
+            <button class="mic-btn" id="mic-btn" onclick="toggleVoice()" title="Voice input">🎤</button>
+            <button class="autofill-btn" id="autofill-btn" onclick="autoFillIngredients()" title="AI auto-fill ingredients">🤖 Auto-fill</button>
+          </div>
+        </label>
+        <label id="rest-cost-label" style="display:none">Cost per portion ($)
+          <div class="name-wrap">
+            <input type="text" id="f-rest-cost" placeholder="0.00">
+            <button class="autofill-btn" id="rest-lookup-btn" onclick="lookupRestaurantPrice()" title="Look up real current price from the web">🔍 Look up price</button>
+          </div>
+        </label>
+      </div>
+      <div class="ingr-section" id="ingr-section">
+        <h4>Ingredients</h4>
+        <div id="ingr-rows"></div>
+        <button id="add-ingr-btn" onclick="addIngrRow()">+ Add ingredient</button>
+      </div>
+      <div class="form-actions">
+        <button class="save-btn" onclick="saveMeal()">Save Meal</button>
+        <button class="cancel-btn" onclick="closeForm()">Cancel</button>
+      </div>
+    </div>
+
+    <div id="entries-area"></div>
+  </div>
+</div>
+
+<!-- Hidden camera input -->
+<input type="file" id="camera-input" accept="image/*" capture="environment" style="display:none" onchange="onCameraCapture(event)">
+
+<!-- AI Capture Modal -->
+<div class="modal-overlay" id="ai-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>🤖 AI Food Capture</h3>
+      <button class="modal-close" onclick="closeAIModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="ai-options">
+        <p style="font-size:12px;color:#666;margin-bottom:12px">Take a photo of your meal or describe it with your voice — AI will look up real prices automatically.</p>
+        <div class="capture-options">
+          <button class="capture-option" onclick="triggerCamera()">
+            <span class="icon">📷</span>
+            <div class="label">Take Photo</div>
+            <div class="sub">Snap your meal</div>
+          </button>
+          <button class="capture-option" onclick="startAIVoice()">
+            <span class="icon">🎙️</span>
+            <div class="label">Speak It</div>
+            <div class="sub">Describe what you ate</div>
+          </button>
+        </div>
+        <div id="ai-voice-status" style="display:none;text-align:center;color:#7c4dff;padding:10px;font-size:13px">
+          🎤 Listening... speak your meal
+        </div>
+      </div>
+
+      <div id="ai-chat">
+        <img id="img-preview" alt="Food photo">
+        <div id="chat-bubbles" style="max-height:220px;overflow-y:auto;padding-right:4px"></div>
+        <div id="ai-status-row"></div>
+        <div class="chat-input-row" id="chat-input-row" style="display:none">
+          <input type="text" id="chat-input" placeholder="Type your answer..." onkeydown="if(event.key==='Enter')sendChatAnswer()">
+          <button class="chat-mic-btn" id="chat-mic" onclick="toggleChatVoice()" title="Voice answer">🎤</button>
+          <button class="chat-send-btn" onclick="sendChatAnswer()">➤</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal">
+    <div class="modal-header" style="background:#1a73e8">
+      <h3>⚙️ Settings</h3>
+      <button class="modal-close" onclick="closeSettings()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="settings-row">
+        <label>Anthropic API Key</label>
+        <input type="password" id="api-key-input" placeholder="sk-ant-...">
+        <div class="settings-note">Stored locally in your browser. Never sent anywhere except Anthropic's API.</div>
+      </div>
+      <button class="settings-save-btn" onclick="saveApiKey()">Save Key</button>
+      <div class="key-status" id="key-status"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Export Preview Modal -->
+<div class="modal-overlay" id="export-modal">
+  <div class="modal" style="max-width:min(95vw,780px)">
+    <div class="modal-header" style="background:#34a853">
+      <h3>📊 Day CSV Preview — edit before downloading</h3>
+      <button class="modal-close" onclick="closeExportModal()">✕</button>
+    </div>
+    <div class="modal-body" style="padding:12px">
+      <p style="font-size:12px;color:#666;margin-bottom:10px">Tap any cell to edit. Changes only affect the download — not your saved log.</p>
+      <div id="export-table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch"></div>
+      <div class="form-actions" style="margin-top:14px">
+        <button class="save-btn" onclick="downloadCSVFromModal()">⬇ Download CSV</button>
+        <button class="cancel-btn" onclick="closeExportModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DATES = (() => {
+  const d = [];
+  const start = new Date(2026, 3, 24);
+  for (let i = 0; i < 14; i++) {
+    const dt = new Date(start);
+    dt.setDate(start.getDate() + i);
+    d.push(dt.toISOString().slice(0, 10));
+  }
+  return d;
+})();
+
+const MEAL_LABEL = { B: 'Breakfast', L: 'Lunch', D: 'Dinner', S: 'Snack' };
+
+const SYSTEM_PROMPT_VISION = `You are a food cost and nutrition tracking assistant.
+
+When given a photo or description of food:
+1. Identify what was eaten (meal name, ingredients if home-cooked)
+2. Use web_search to find CURRENT real prices:
+   - Home meals: search grocery store prices (Walmart, Kroger, King Soopers) per ingredient
+   - Restaurant meals: search the restaurant's current menu price for that item
+3. Estimate nutrition per serving: calories, protein (g), carbs (g), fat (g)
+4. Ask clarifying questions ONE AT A TIME if truly needed (max 2 questions)
+5. Determine meal type: Breakfast (B), Lunch (L), Dinner (D), or Snack (S)
+
+When you have all info, respond with ONLY this JSON (no other text, no markdown):
+{"complete":true,"meal":"B","type":"home","name":"Oatmeal with Berries","ingredients":[{"name":"Rolled Oats","amount":"1 cup","costPerPortion":0.28},{"name":"Blueberries","amount":"1/2 cup","costPerPortion":0.65}],"totalCost":0.93,"calories":285,"protein":10,"carbs":48,"fat":5}
+
+For restaurant meals use empty ingredients array:
+{"complete":true,"meal":"L","type":"restaurant","name":"Big Mac Meal","ingredients":[],"totalCost":9.49,"calories":1080,"protein":44,"carbs":133,"fat":44}
+
+If you need to ask a clarifying question first, respond with ONLY:
+{"complete":false,"question":"Was this home-cooked or from a restaurant?"}
+
+Always use web_search for real current prices.`;
+
+const SYSTEM_PROMPT_TEXT = `You are a food cost and nutrition tracking assistant.
+
+When given a description of food:
+1. Identify what was eaten (meal name, ingredients if home-cooked)
+2. Use web_search to find CURRENT real prices:
+   - Restaurant meals: search "[restaurant name] [item name] price menu" to get the exact current menu price
+   - Home meals: search grocery store prices (Walmart, Kroger) per ingredient
+3. Estimate nutrition per serving: calories, protein (g), carbs (g), fat (g)
+4. Ask clarifying questions ONE AT A TIME if truly needed (max 2 questions)
+5. Determine meal type: Breakfast (B), Lunch (L), Dinner (D), or Snack (S)
+
+When you have all info, respond with ONLY this JSON (no other text, no markdown):
+{"complete":true,"meal":"B","type":"home","name":"Oatmeal with Berries","ingredients":[{"name":"Rolled Oats","amount":"1 cup","costPerPortion":0.28},{"name":"Blueberries","amount":"1/2 cup","costPerPortion":0.65}],"totalCost":0.93,"calories":285,"protein":10,"carbs":48,"fat":5}
+
+For restaurant meals use empty ingredients array and the REAL current menu price:
+{"complete":true,"meal":"L","type":"restaurant","name":"Big Mac Meal","ingredients":[],"totalCost":9.49,"calories":1080,"protein":44,"carbs":133,"fat":44}
+
+If you need to ask a clarifying question first, respond with ONLY:
+{"complete":false,"question":"Was this home-cooked or from a restaurant?"}
+
+Always use web_search for real current prices — never guess.`;
+
+let activeDate = null;
+let searchQuery = '';
+let recognition = null;
+let aiMessages = [];
+let chatRecognition = null;
+let capturedImageB64 = null;
+
+// --- API Key ---
+function getApiKey() { return localStorage.getItem('anthropicKey') || window.ANTHROPIC_KEY || ''; }
+function openSettings() {
+  document.getElementById('api-key-input').value = getApiKey();
+  updateKeyStatus();
+  document.getElementById('settings-modal').classList.add('open');
+}
+function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
+function saveApiKey() {
+  const key = document.getElementById('api-key-input').value.trim();
+  localStorage.setItem('anthropicKey', key);
+  updateKeyStatus();
+}
+function updateKeyStatus() {
+  const el = document.getElementById('key-status');
+  if (getApiKey()) { el.textContent = '✓ API key saved'; el.className = 'key-status ok'; }
+  else { el.textContent = '⚠ No API key — AI features disabled'; el.className = 'key-status missing'; }
+}
+
+// --- Data layer ---
+function loadAll() { try { return JSON.parse(localStorage.getItem('foodLog') || '{}'); } catch { return {}; } }
+function saveAll(data) { localStorage.setItem('foodLog', JSON.stringify(data)); }
+function getEntries(date) { return loadAll()[date] || []; }
+function saveEntries(date, entries) { const data = loadAll(); data[date] = entries; saveAll(data); }
+function getMonthlyTotal() {
+  return Object.values(loadAll()).flat().reduce((s, e) => s + (e.totalCost || 0), 0);
+}
+function getMonthlyNutrition() {
+  const all = Object.values(loadAll()).flat();
+  return {
+    calories: all.reduce((s, e) => s + (e.calories || 0), 0),
+    protein: all.reduce((s, e) => s + (e.protein || 0), 0)
+  };
+}
+
+// --- Sidebar ---
+function buildSidebar() {
+  const sb = document.getElementById('sidebar');
+  const data = loadAll();
+  sb.innerHTML = DATES.map(d => {
+    const dt = new Date(d + 'T00:00:00');
+    const label = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const hasData = (data[d] || []).length > 0;
+    const active = d === activeDate ? 'active' : '';
+    const dot = hasData ? '<span class="dot"></span>' : '';
+    return `<div class="date-item ${active}" onclick="selectDate('${d}')">${label}${dot}</div>`;
+  }).join('');
+}
+
+function selectDate(date) { activeDate = date; closeForm(); render(); }
+
+// --- Render ---
+function render() {
+  buildSidebar();
+  document.getElementById('monthly-cost').textContent = '$' + getMonthlyTotal().toFixed(2);
+  const nutr = getMonthlyNutrition();
+  const nutrEl = document.getElementById('monthly-nutrition');
+  if (nutr.calories > 0) nutrEl.textContent = `| ${nutr.calories} cal · ${nutr.protein}g protein`;
+  else nutrEl.textContent = '';
+  if (!activeDate) return;
+
+  const dt = new Date(activeDate + 'T00:00:00');
+  document.getElementById('panel-title').textContent =
+    dt.toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' });
+
+  const entries = getEntries(activeDate);
+  const area = document.getElementById('entries-area');
+  const formVisible = document.getElementById('form-container').style.display !== 'none';
+
+  if (!formVisible) {
+    const exportBtn = entries.length > 0
+      ? `<button class="export-btn" onclick="openExportModal()">📊 Export CSV</button>`
+      : '';
+    area.innerHTML = `
+      <div class="action-btns">
+        <button class="add-btn" onclick="openForm()">+ Add Meal</button>
+        <button class="ai-btn" onclick="openAIModal()">🤖 AI Capture</button>
+        ${exportBtn}
+      </div>`;
+  }
+
+  if (entries.length === 0) {
+    area.innerHTML += `<p class="empty-msg">No meals logged for this date.</p>`;
+    return;
+  }
+
+  let rows = entries.map((e, i) => {
+    const ingrHtml = e.type === 'home' && e.ingredients && e.ingredients.length
+      ? `<div class="ingr-list">${e.ingredients.map(ig =>
+          `<span>${maybeHighlight(ig.name)} — ${ig.amount} @ $${parseFloat(ig.costPerPortion||0).toFixed(2)}</span>`
+        ).join('')}</div>`
+      : '<em>—</em>';
+    const nutrHtml = e.calories
+      ? `<span style="font-size:11px;color:#555">${e.calories} cal<br>${e.protein||0}g protein</span>`
+      : '<span style="font-size:11px;color:#bbb">—</span>';
+    return `<tr>
+      <td>${MEAL_LABEL[e.meal]}</td>
+      <td>${e.type === 'home' ? 'Home' : 'Restaurant'}</td>
+      <td>${maybeHighlight(e.name)}</td>
+      <td>${ingrHtml}</td>
+      <td>$${(e.totalCost||0).toFixed(2)}</td>
+      <td>${nutrHtml}</td>
+      <td><button class="delete-btn" onclick="deleteEntry(${i})" title="Delete">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  area.innerHTML += `<div class="table-wrap"><table>
+    <thead><tr>
+      <th>Meal</th><th>Home / Restaurant</th><th>Name of Meal</th>
+      <th>Ingredients (name — amount @ $/portion)</th>
+      <th>Total Cost</th><th>Nutrition</th><th></th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+function maybeHighlight(text) {
+  if (!searchQuery || !text) return text || '';
+  const re = new RegExp('(' + searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+  return String(text).replace(re, '<mark class="highlight">$1</mark>');
+}
+
+function deleteEntry(idx) {
+  const entries = getEntries(activeDate);
+  entries.splice(idx, 1);
+  saveEntries(activeDate, entries);
+  render();
+}
+
+// --- Manual form ---
+function openForm() {
+  document.getElementById('form-container').style.display = 'block';
+  document.getElementById('entries-area').innerHTML = '';
+  resetForm();
+  render();
+}
+function closeForm() {
+  document.getElementById('form-container').style.display = 'none';
+  if (activeDate) render();
+}
+function resetForm() {
+  document.getElementById('f-meal').value = 'B';
+  document.getElementById('f-type').value = 'home';
+  document.getElementById('f-name').value = '';
+  const costEl = document.getElementById('f-rest-cost');
+  costEl.value = '';
+  delete costEl.dataset.calories; delete costEl.dataset.protein;
+  delete costEl.dataset.carbs; delete costEl.dataset.fat;
+  document.getElementById('ingr-rows').innerHTML = '';
+  toggleIngredients();
+  addIngrRow();
+}
+function toggleIngredients() {
+  const isHome = document.getElementById('f-type').value === 'home';
+  document.getElementById('ingr-section').style.display = isHome ? '' : 'none';
+  document.getElementById('rest-cost-label').style.display = isHome ? 'none' : '';
+  document.getElementById('autofill-btn').style.display = isHome ? '' : 'none';
+  document.getElementById('rest-lookup-btn').style.display = isHome ? 'none' : '';
+}
+function addIngrRow() {
+  const row = document.createElement('div');
+  row.className = 'ingr-row';
+  row.innerHTML = `
+    <input class="ingr-name" type="text" placeholder="Ingredient">
+    <input class="ingr-amount" type="text" placeholder="Amount (e.g. 1 cup)">
+    <input class="ingr-cost" type="text" placeholder="$/portion">
+    <button class="remove-ingr" onclick="this.parentElement.remove()">✕</button>`;
+  document.getElementById('ingr-rows').appendChild(row);
+}
+function saveMeal() {
+  const name = document.getElementById('f-name').value.trim();
+  if (!name) { alert('Please enter a meal name.'); return; }
+  const type = document.getElementById('f-type').value;
+  let ingredients = [], totalCost = 0, calories = 0, protein = 0, carbs = 0, fat = 0;
+  if (type === 'home') {
+    document.querySelectorAll('#ingr-rows .ingr-row').forEach(row => {
+      const n = row.querySelector('.ingr-name').value.trim();
+      const a = row.querySelector('.ingr-amount').value.trim();
+      const c = parseFloat(row.querySelector('.ingr-cost').value) || 0;
+      if (n) { ingredients.push({ name: n, amount: a, costPerPortion: c }); totalCost += c; }
+    });
+  } else {
+    const costEl = document.getElementById('f-rest-cost');
+    totalCost = parseFloat(costEl.value) || 0;
+    calories = parseInt(costEl.dataset.calories || 0) || 0;
+    protein = parseInt(costEl.dataset.protein || 0) || 0;
+    carbs = parseInt(costEl.dataset.carbs || 0) || 0;
+    fat = parseInt(costEl.dataset.fat || 0) || 0;
+  }
+  const entry = { id: Date.now().toString(), meal: document.getElementById('f-meal').value, type, name, ingredients, totalCost, calories, protein, carbs, fat };
+  const entries = getEntries(activeDate);
+  entries.push(entry);
+  saveEntries(activeDate, entries);
+  closeForm();
+}
+
+// --- Search ---
+function onSearch() {
+  searchQuery = document.getElementById('search').value.trim().toLowerCase();
+  buildSidebar();
+  if (searchQuery) renderSearchResults(); else if (activeDate) render();
+}
+function renderSearchResults() {
+  const data = loadAll();
+  const area = document.getElementById('entries-area');
+  document.getElementById('panel-title').textContent = `Search: "${searchQuery}"`;
+  let allRows = '';
+  DATES.forEach(d => {
+    (data[d] || []).forEach(e => {
+      const nameMatch = e.name && e.name.toLowerCase().includes(searchQuery);
+      const ingrMatch = (e.ingredients || []).some(ig => ig.name && ig.name.toLowerCase().includes(searchQuery));
+      if (!nameMatch && !ingrMatch) return;
+      const dt = new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const ingrHtml = (e.ingredients || []).length
+        ? `<div class="ingr-list">${e.ingredients.map(ig =>
+            `<span>${maybeHighlight(ig.name)} — ${ig.amount} @ $${parseFloat(ig.costPerPortion||0).toFixed(2)}</span>`
+          ).join('')}</div>` : '<em>—</em>';
+      allRows += `<tr>
+        <td>${dt}</td><td>${MEAL_LABEL[e.meal]}</td>
+        <td>${e.type === 'home' ? 'Home' : 'Restaurant'}</td>
+        <td>${maybeHighlight(e.name)}</td><td>${ingrHtml}</td>
+        <td>$${(e.totalCost||0).toFixed(2)}</td>
+      </tr>`;
+    });
+  });
+  area.innerHTML = allRows
+    ? `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Meal</th><th>Home/Rest.</th><th>Name</th><th>Ingredients</th><th>Total Cost</th></tr></thead><tbody>${allRows}</tbody></table></div>`
+    : '<p class="empty-msg">No matches found.</p>';
+}
+
+// --- Manual voice (name field) ---
+function toggleVoice() {
+  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    alert('Voice input not supported. Try Chrome.'); return;
+  }
+  const btn = document.getElementById('mic-btn');
+  if (recognition) { recognition.stop(); recognition = null; btn.classList.remove('listening'); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'en-US'; recognition.interimResults = false;
+  btn.classList.add('listening');
+  recognition.onresult = e => { document.getElementById('f-name').value = e.results[0][0].transcript; btn.classList.remove('listening'); recognition = null; };
+  recognition.onerror = recognition.onend = () => { btn.classList.remove('listening'); recognition = null; };
+  recognition.start();
+}
+
+// =====================
+// AI CAPTURE
+// =====================
+
+function openAIModal() {
+  if (!getApiKey()) {
+    alert('Please add your Anthropic API key in Settings (⚙️) first.'); return;
+  }
+  if (!activeDate) { alert('Please select a date first.'); return; }
+  resetAIModal();
+  document.getElementById('ai-modal').classList.add('open');
+}
+function closeAIModal() {
+  document.getElementById('ai-modal').classList.remove('open');
+  if (chatRecognition) { chatRecognition.stop(); chatRecognition = null; }
+}
+function resetAIModal() {
+  document.getElementById('ai-options').style.display = '';
+  document.getElementById('ai-chat').style.display = 'none';
+  document.getElementById('ai-voice-status').style.display = 'none';
+  document.getElementById('img-preview').style.display = 'none';
+  document.getElementById('img-preview').src = '';
+  document.getElementById('chat-bubbles').innerHTML = '';
+  document.getElementById('ai-status-row').innerHTML = '';
+  document.getElementById('chat-input-row').style.display = 'none';
+  document.getElementById('chat-input').value = '';
+  capturedImageB64 = null;
+  aiMessages = [];
+}
+
+// Camera
+function triggerCamera() {
+  document.getElementById('camera-input').value = '';
+  document.getElementById('camera-input').click();
+}
+function onCameraCapture(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const b64 = reader.result.split(',')[1];
+    const mime = file.type || 'image/jpeg';
+    capturedImageB64 = { data: b64, media_type: mime };
+    document.getElementById('img-preview').src = reader.result;
+    document.getElementById('img-preview').style.display = 'block';
+    switchToChat();
+    startAIFlow();
+  };
+  reader.readAsDataURL(file);
+}
+
+// AI Voice (full description)
+function startAIVoice() {
+  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    alert('Voice not supported. Try Chrome.'); return;
+  }
+  document.getElementById('ai-voice-status').style.display = '';
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const r = new SR();
+  r.lang = 'en-US'; r.interimResults = false;
+  r.onresult = e => {
+    const transcript = e.results[0][0].transcript;
+    document.getElementById('ai-voice-status').style.display = 'none';
+    switchToChat();
+    addBubble(transcript, 'user');
+    aiMessages.push({ role: 'user', content: transcript });
+    runClaude();
+  };
+  r.onerror = () => { document.getElementById('ai-voice-status').textContent = '❌ Could not hear you. Try again.'; };
+  r.onend = () => { /* handled by onresult */ };
+  r.start();
+}
+
+function switchToChat() {
+  document.getElementById('ai-options').style.display = 'none';
+  document.getElementById('ai-chat').style.display = '';
+}
+
+function startAIFlow() {
+  const content = [];
+  if (capturedImageB64) {
+    content.push({ type: 'image', source: { type: 'base64', media_type: capturedImageB64.media_type, data: capturedImageB64.data } });
+    content.push({ type: 'text', text: 'Please identify this meal, look up current grocery or restaurant prices using web search, and log it with accurate costs.' });
+  }
+  aiMessages = [{ role: 'user', content }];
+  runClaude();
+}
+
+async function runClaude() {
+  showAIStatus('Searching prices & analyzing...');
+  document.getElementById('chat-input-row').style.display = 'none';
+
+  try {
+    const key = getApiKey();
+    const hasImage = !!capturedImageB64;
+    let response = await fetchClaude(key, aiMessages, hasImage, true);
+
+    // Handle tool-use loop (web_search)
+    let safetyCount = 0;
+    while (response.stop_reason === 'tool_use' && safetyCount++ < 5) {
+      const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
+      aiMessages.push({ role: 'assistant', content: response.content });
+      showAIStatus('Fetching real prices...');
+
+      const toolResults = toolUseBlocks.map(b => ({
+        type: 'tool_result',
+        tool_use_id: b.id,
+        content: b.content  // real web search results from Anthropic's search infrastructure
+      }));
+      aiMessages.push({ role: 'user', content: toolResults });
+      response = await fetchClaude(key, aiMessages, hasImage, true);
+    }
+
+    hideAIStatus();
+
+    const textBlock = response.content.find(b => b.type === 'text');
+    if (!textBlock) { showAIError('No response from AI. Try again.'); return; }
+
+    let json;
+    try {
+      const match = textBlock.text.match(/\{[\s\S]*\}/);
+      json = JSON.parse(match ? match[0] : textBlock.text);
+    } catch {
+      addBubble(textBlock.text, 'ai');
+      showAIError('Could not parse AI response. Please try again.');
+      return;
+    }
+
+    if (json.complete) {
+      fillAndSave(json);
+    } else if (json.question) {
+      aiMessages.push({ role: 'assistant', content: textBlock.text });
+      addBubble(json.question, 'ai');
+      document.getElementById('chat-input-row').style.display = 'flex';
+      document.getElementById('chat-input').focus();
+    }
+  } catch (err) {
+    showAIError('Error: ' + err.message);
+  }
+}
+
+async function fetchClaude(key, messages, hasImage, useSearch = false, systemOverride = null) {
+  const needsSonnet = hasImage || useSearch;
+  const model = needsSonnet ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001';
+  const system = systemOverride !== null ? systemOverride : (hasImage ? SYSTEM_PROMPT_VISION : SYSTEM_PROMPT_TEXT);
+  const body = { model, max_tokens: 1024, system, messages };
+  if (needsSonnet) body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
+
+  const res = await fetch('/proxy/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${res.status}`);
+  }
+  return res.json();
+}
+
+function sendChatAnswer() {
+  const val = document.getElementById('chat-input').value.trim();
+  if (!val) return;
+  document.getElementById('chat-input').value = '';
+  addBubble(val, 'user');
+  aiMessages.push({ role: 'user', content: val });
+  runClaude();
+}
+
+// Chat voice for answering questions
+function toggleChatVoice() {
+  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    alert('Voice not supported. Try Chrome.'); return;
+  }
+  const btn = document.getElementById('chat-mic');
+  if (chatRecognition) { chatRecognition.stop(); chatRecognition = null; btn.classList.remove('listening'); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  chatRecognition = new SR();
+  chatRecognition.lang = 'en-US'; chatRecognition.interimResults = false;
+  btn.classList.add('listening');
+  chatRecognition.onresult = e => {
+    document.getElementById('chat-input').value = e.results[0][0].transcript;
+    btn.classList.remove('listening'); chatRecognition = null;
+    sendChatAnswer();
+  };
+  chatRecognition.onerror = chatRecognition.onend = () => { btn.classList.remove('listening'); chatRecognition = null; };
+  chatRecognition.start();
+}
+
+function fillAndSave(json) {
+  const entry = {
+    id: Date.now().toString(),
+    meal: json.meal || 'B',
+    type: json.type || 'home',
+    name: json.name || 'Unknown Meal',
+    ingredients: json.ingredients || [],
+    totalCost: json.totalCost || 0,
+    calories: json.calories || 0,
+    protein: json.protein || 0,
+    carbs: json.carbs || 0,
+    fat: json.fat || 0
+  };
+  const entries = getEntries(activeDate);
+  entries.push(entry);
+  saveEntries(activeDate, entries);
+
+  addBubble(`✅ Logged "${entry.name}" — $${entry.totalCost.toFixed(2)} total`, 'ai');
+  setTimeout(() => { closeAIModal(); render(); }, 1200);
+}
+
+function addBubble(text, who) {
+  const el = document.createElement('div');
+  el.className = `chat-bubble bubble-${who}`;
+  el.textContent = text;
+  const container = document.getElementById('chat-bubbles');
+  container.appendChild(el);
+  container.scrollTop = container.scrollHeight;
+}
+
+function showAIStatus(msg) {
+  document.getElementById('ai-status-row').innerHTML =
+    `<div class="ai-status"><div class="spinner"></div>${msg}</div>`;
+}
+function hideAIStatus() { document.getElementById('ai-status-row').innerHTML = ''; }
+function showAIError(msg) {
+  document.getElementById('ai-status-row').innerHTML =
+    `<div style="color:#e53935;text-align:center;padding:8px;font-size:13px">❌ ${msg}</div>`;
+}
+
+// --- AI Auto-fill Ingredients ---
+async function autoFillIngredients() {
+  const name = document.getElementById('f-name').value.trim();
+  if (!name) { alert('Enter a meal name first.'); return; }
+  if (document.getElementById('f-type').value !== 'home') return;
+  if (!getApiKey()) { alert('Add your Anthropic API key in Settings first.'); return; }
+
+  const btn = document.getElementById('autofill-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Filling...';
+
+  try {
+    const messages = [{
+      role: 'user',
+      content: `List the standard home-cooked ingredients for "${name}". Reply with ONLY a JSON array, no markdown, no other text:
+[{"name":"Ground Beef","amount":"1/4 lb","costPerPortion":1.50}, ...]
+Use realistic US grocery prices for a single serving.`
+    }];
+
+    const data = await fetchClaude(getApiKey(), messages, false, false, 'You are a grocery ingredient cost estimator. Reply with only a raw JSON array of ingredients with name, amount, and costPerPortion fields. No markdown, no other text.');
+    const text = data.content.find(b => b.type === 'text')?.text || '';
+    const match = text.match(/\[[\s\S]*\]/);
+    if (!match) {
+      // Claude couldn't list home ingredients — likely a restaurant meal. Switch type and look up price.
+      document.getElementById('f-type').value = 'restaurant';
+      toggleIngredients();
+      btn.disabled = false;
+      btn.textContent = '🤖 Auto-fill';
+      lookupRestaurantPrice();
+      return;
+    }
+    const ingredients = JSON.parse(match[0]);
+
+    document.getElementById('ingr-rows').innerHTML = '';
+    ingredients.forEach(ig => {
+      const row = document.createElement('div');
+      row.className = 'ingr-row';
+      row.innerHTML = `
+        <input class="ingr-name" type="text" placeholder="Ingredient" value="${ig.name || ''}">
+        <input class="ingr-amount" type="text" placeholder="Amount" value="${ig.amount || ''}">
+        <input class="ingr-cost" type="text" placeholder="$/portion" value="${parseFloat(ig.costPerPortion || 0).toFixed(2)}">
+        <button class="remove-ingr" onclick="this.parentElement.remove()">✕</button>`;
+      document.getElementById('ingr-rows').appendChild(row);
+    });
+  } catch (err) {
+    alert('Auto-fill failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🤖 Auto-fill';
+  }
+}
+
+// --- Export CSV (editable preview) ---
+const CSV_HEADERS = ['Date', 'Meal (B,L,D,S)', 'Home or Restaurant', 'Name of Meal', 'Ingredient', 'Amount', 'Cost (per portion)', 'Total Cost'];
+
+function buildExportRows(entries) {
+  const dateLabel = new Date(activeDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const rows = [];
+  entries.forEach(e => {
+    const type = e.type === 'home' ? 'Home' : 'Restaurant';
+    if (e.type === 'restaurant') {
+      rows.push([dateLabel, e.meal, type, e.name, '', '', '', `$${(e.totalCost || 0).toFixed(2)}`]);
+    } else {
+      const ingrs = e.ingredients || [];
+      if (!ingrs.length) {
+        rows.push([dateLabel, e.meal, type, e.name, '', '', '', `$${(e.totalCost || 0).toFixed(2)}`]);
+      } else {
+        ingrs.forEach((ig, i) => {
+          rows.push([
+            i === 0 ? dateLabel : '',
+            i === 0 ? e.meal : '',
+            i === 0 ? type : '',
+            i === 0 ? e.name : '',
+            ig.name || '',
+            ig.amount || '',
+            `$${parseFloat(ig.costPerPortion || 0).toFixed(2)}`,
+            i === ingrs.length - 1 ? `$${(e.totalCost || 0).toFixed(2)}` : ''
+          ]);
+        });
+      }
+    }
+  });
+  const tc = entries.reduce((s, e) => s + (e.totalCost || 0), 0);
+  rows.push(['', '', '', '', '', '', 'DAILY TOTAL', `$${tc.toFixed(2)}`]);
+  return rows;
+}
+
+function openExportModal() {
+  if (!activeDate) return;
+  const entries = getEntries(activeDate);
+  if (!entries.length) { alert('No meals logged for this date.'); return; }
+  const rows = buildExportRows(entries);
+  let html = `<table class="export-table"><thead><tr>${CSV_HEADERS.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>`;
+  rows.forEach(row => {
+    html += '<tr>' + row.map(cell =>
+      `<td><input type="text" value="${String(cell).replace(/"/g, '&quot;').replace(/</g, '&lt;')}"></td>`
+    ).join('') + '</tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('export-table-wrap').innerHTML = html;
+  document.getElementById('export-modal').classList.add('open');
+}
+
+function closeExportModal() { document.getElementById('export-modal').classList.remove('open'); }
+
+function downloadCSVFromModal() {
+  const rows = Array.from(document.querySelectorAll('#export-table-wrap tbody tr')).map(tr =>
+    Array.from(tr.querySelectorAll('input')).map(inp => inp.value)
+  );
+  const esc = v => { const s = String(v); return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const csv = [CSV_HEADERS, ...rows].map(r => r.map(esc).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `food-log-${activeDate}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// --- Restaurant price lookup (web search) ---
+async function lookupRestaurantPrice() {
+  const name = document.getElementById('f-name').value.trim();
+  if (!name) { alert('Enter the restaurant and meal name first.'); return; }
+  if (!getApiKey()) { alert('Add your Anthropic API key in Settings first.'); return; }
+
+  const btn = document.getElementById('rest-lookup-btn');
+  btn.disabled = true; btn.textContent = '⏳ Looking up...';
+
+  const LOOKUP_SYSTEM = 'You are a restaurant menu price lookup tool. Use web_search to find the current US menu price and nutrition for the requested item. After searching, respond with ONLY this raw JSON (no markdown, no other text): {"price":9.99,"calories":550,"protein":25,"carbs":45,"fat":22}';
+  try {
+    let msgs = [{
+      role: 'user',
+      content: `Search the web for the current US menu price and nutrition of: "${name}". Return only the JSON.`
+    }];
+    let response = await fetchClaude(getApiKey(), msgs, false, true, LOOKUP_SYSTEM);
+    let safety = 0;
+    while (response.stop_reason === 'tool_use' && safety++ < 5) {
+      const toolBlocks = response.content.filter(b => b.type === 'tool_use');
+      msgs.push({ role: 'assistant', content: response.content });
+      msgs.push({ role: 'user', content: toolBlocks.map(b => ({
+        type: 'tool_result', tool_use_id: b.id,
+        content: b.content
+      }))});
+      response = await fetchClaude(getApiKey(), msgs, false, true, LOOKUP_SYSTEM);
+    }
+    const text = response.content.find(b => b.type === 'text')?.text || '';
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No price data in response');
+    const result = JSON.parse(match[0]);
+    const costEl = document.getElementById('f-rest-cost');
+    costEl.value = parseFloat(result.price || 0).toFixed(2);
+    costEl.dataset.calories = result.calories || 0;
+    costEl.dataset.protein = result.protein || 0;
+    costEl.dataset.carbs = result.carbs || 0;
+    costEl.dataset.fat = result.fat || 0;
+  } catch (err) {
+    alert('Price lookup failed: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '🔍 Look up price';
+  }
+}
+
+// --- Init ---
+// Seed localStorage from config.js if no key saved yet
+if (!getApiKey() && window.ANTHROPIC_KEY) { localStorage.setItem('anthropicKey', window.ANTHROPIC_KEY); }
+
+buildSidebar();
+document.getElementById('monthly-cost').textContent = '$' + getMonthlyTotal().toFixed(2);
+</script>
+</body>
+</html>
