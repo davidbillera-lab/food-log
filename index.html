@@ -450,6 +450,11 @@ function parseFraction(s) {
   if (parts.length === 2) return parseFloat(parts[0]) / parseFloat(parts[1]);
   return parseFloat(s) || 0;
 }
+function storeUrl(name, raw) {
+  const u = (raw || '').trim();
+  return (u.startsWith('http') && !u.includes('...')) ? u : `https://www.kingsoopers.com/search?query=${encodeURIComponent(name)}`;
+}
+function openLink(url) { window.open(url, '_blank', 'noopener,noreferrer'); }
 
 const SYSTEM_PROMPT_VISION = `You are a food cost and nutrition tracking assistant.
 
@@ -620,7 +625,7 @@ function render() {
   let rows = entries.map((e, i) => {
     const ingrHtml = e.type === 'home' && e.ingredients && e.ingredients.length
       ? `<div class="ingr-list">${e.ingredients.map(ig =>
-          `<span>${maybeHighlight(ig.name)} — ${ig.portion || ig.amount || ''} @ $${parseFloat(ig.costPerPortion||0).toFixed(2)}${ig.sourceUrl ? ` <a href="${ig.sourceUrl}" target="_blank" style="text-decoration:none">🔗</a>` : ''}</span>`
+          `<span>${maybeHighlight(ig.name)} — ${ig.portion || ig.amount || ''} @ $${parseFloat(ig.costPerPortion||0).toFixed(2)} <a href="javascript:void(0)" onclick="openLink('${storeUrl(ig.name, ig.sourceUrl).replace(/'/g,"\\'")}');" style="text-decoration:none">🔗</a></span>`
         ).join('')}</div>`
       : '<em>—</em>';
     const nutrHtml = e.calories
@@ -704,7 +709,7 @@ function addIngrRow() {
     <input class="ingr-store-price" type="number" step="0.01" min="0" placeholder="Store price $" oninput="updateCost(this.closest('.ingr-row'))">
     <input class="ingr-cost" type="text" placeholder="Cost/portion" readonly>
     <input class="ingr-url" type="hidden" value="">
-    <a class="ingr-link" href="#" target="_blank" style="display:none">🔗</a>
+    <a class="ingr-link" href="javascript:void(0)" onclick="openLink(this.previousElementSibling.value)" style="display:none">🔗</a>
     <button class="remove-ingr" onclick="this.parentElement.remove()">✕</button>`;
   document.getElementById('ingr-rows').appendChild(row);
 }
@@ -1060,7 +1065,7 @@ async function autoFillIngredients() {
     const fromCache = [], needsSearch = [];
     ingredientList.forEach(ig => {
       const hit = getCachedIngr(ig.name);
-      if (hit) fromCache.push({ ...ig, storePrice: hit.storePrice, sourceUrl: hit.sourceUrl });
+      if (hit) fromCache.push({ ...ig, storePrice: hit.storePrice, sourceUrl: storeUrl(ig.name, hit.sourceUrl) });
       else needsSearch.push(ig);
     });
 
@@ -1087,10 +1092,7 @@ Return ONLY a raw JSON array — no markdown, no other text:
       if (pMatch) {
         JSON.parse(pMatch[0]).forEach(p => {
           const ig = needsSearch.find(u => u.name.toLowerCase() === (p.name || '').toLowerCase()) || { name: p.name, portion: '' };
-          const url = p.sourceUrl && p.sourceUrl.startsWith('http') && !p.sourceUrl.includes('...')
-            ? p.sourceUrl
-            : `https://www.kingsoopers.com/search?query=${encodeURIComponent(p.name || ig.name)}`;
-          const entry = { ...ig, storePrice: p.storePrice || 0, sourceUrl: url };
+          const entry = { ...ig, storePrice: p.storePrice || 0, sourceUrl: storeUrl(p.name || ig.name, p.sourceUrl) };
           fromSearch.push(entry);
           setCachedIngr(entry.name, entry.storePrice, entry.sourceUrl);
         });
@@ -1098,7 +1100,7 @@ Return ONLY a raw JSON array — no markdown, no other text:
       // Any that didn't come back from search: add with $0
       needsSearch.forEach(ig => {
         if (!fromSearch.find(s => s.name.toLowerCase() === ig.name.toLowerCase()))
-          fromSearch.push({ ...ig, storePrice: 0, sourceUrl: `https://www.kingsoopers.com/search?query=${encodeURIComponent(ig.name)}` });
+          fromSearch.push({ ...ig, storePrice: 0, sourceUrl: storeUrl(ig.name, '') });
       });
     }
 
@@ -1106,21 +1108,21 @@ Return ONLY a raw JSON array — no markdown, no other text:
     const result = ingredientList.map(ig =>
       fromCache.find(c => c.name.toLowerCase() === ig.name.toLowerCase()) ||
       fromSearch.find(s => s.name.toLowerCase() === ig.name.toLowerCase()) ||
-      { ...ig, storePrice: 0, sourceUrl: `https://www.kingsoopers.com/search?query=${encodeURIComponent(ig.name)}` }
+      { ...ig, storePrice: 0, sourceUrl: storeUrl(ig.name, '') }
     );
 
     document.getElementById('ingr-rows').innerHTML = '';
     result.forEach(ig => {
       const row = document.createElement('div');
       row.className = 'ingr-row';
-      const url = ig.sourceUrl || '';
+      const url = storeUrl(ig.name, ig.sourceUrl);
       row.innerHTML = `
         <input class="ingr-name" type="text" placeholder="Ingredient" value="${ig.name || ''}">
         <input class="ingr-portion" type="text" placeholder="Portion (e.g. 1/6)" value="${ig.portion || ''}" oninput="updateCost(this.closest('.ingr-row'))">
         <input class="ingr-store-price" type="number" step="0.01" min="0" placeholder="Store price $" value="${parseFloat(ig.storePrice || 0).toFixed(2)}" oninput="updateCost(this.closest('.ingr-row'))">
         <input class="ingr-cost" type="text" placeholder="Cost/portion" readonly>
         <input class="ingr-url" type="hidden" value="${url.replace(/"/g, '&quot;')}">
-        <a class="ingr-link" href="${url}" target="_blank" style="${url ? '' : 'display:none'}">🔗</a>
+        <a class="ingr-link" href="javascript:void(0)" onclick="openLink(this.previousElementSibling.value)" style="${url ? '' : 'display:none'}">🔗</a>
         <button class="remove-ingr" onclick="this.parentElement.remove()">✕</button>`;
       document.getElementById('ingr-rows').appendChild(row);
       updateCost(row);
