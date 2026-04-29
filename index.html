@@ -1086,18 +1086,19 @@ For each ingredient:
    - sandwich → deli slices (e.g. "Hillshire Farm Oven Roasted Turkey Breast 9 oz"), NOT whole birds
    - tacos/burgers → ground beef, NOT steak
    - pasta/stir fry → boneless chicken breast, NOT whole chicken
-2. Search Google for: "King Soopers [specific product name] price"
-   Read the price AND the full brand/product name from the Google search snippet.
-3. Return the full specific product name exactly as shown (e.g. "Hillshire Farm Oven Roasted Turkey Breast, 9 oz").
+2. Search kingsoopers.com directly for that product. When you find a product page (URL containing /p/), read the price shown on that page — this is the most accurate source.
+3. If the product page does not show a clear price, also search Google for the product name to confirm the price from search snippets.
+4. Return the full specific product name + size (e.g. "Hillshire Farm Oven Roasted Turkey Breast, 9 oz").
 
 IMPORTANT:
-- productName must be the full specific brand name + size as found in search results (e.g. "Boar's Head Ovengold Turkey, 7 oz" not just "Turkey")
-- storePrice must be a real number found in search results — never 0, never a guess
-- Prices should be realistic (deli turkey ~$5-10, salami ~$4-7, sandwich bread ~$3-5, mayo ~$3-5)
+- storePrice must be the exact price shown on the King Soopers product page or Google snippet — not an estimate
+- productName must be the full brand name + size exactly as listed (e.g. "Boar's Head Ovengold Turkey, 7 oz")
+- Do multiple searches if needed to confirm the price is correct
+- Never return 0 or a made-up price
 
 Return ONLY a raw JSON array — no markdown, no other text:
-[{"name":"Deli Turkey","productName":"Hillshire Farm Oven Roasted Turkey Breast, 9 oz","storePrice":8.99}]`;
-      let pMsgs = [{ role: 'user', content: `Meal: "${name}"\nSearch Google for King Soopers prices for each ingredient. Use the meal context to pick the right product form. Find the full brand name + size and exact price from Google search results.\nIngredients: ${needsSearch.map(i => i.name).join(', ')}\nReturn only the JSON array.` }];
+[{"name":"Deli Turkey","productName":"Hillshire Farm Oven Roasted Turkey Breast, 9 oz","storePrice":3.99}]`;
+      let pMsgs = [{ role: 'user', content: `Meal: "${name}"\nFind the exact King Soopers price for each ingredient. Search the King Soopers product pages directly to get the real listed price — do not guess. Use meal context to pick the right product form.\nIngredients: ${needsSearch.map(i => i.name).join(', ')}\nReturn only the JSON array.` }];
       let pResp = await fetchClaude(getApiKey(), pMsgs, false, true, PRICE_SYSTEM, 4096);
       let safety = 0;
       while (pResp.stop_reason === 'tool_use' && safety++ < 8) {
