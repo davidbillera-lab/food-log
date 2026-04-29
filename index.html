@@ -407,7 +407,7 @@
       <hr style="margin:18px 0;border:none;border-top:1px solid #eee">
       <div class="settings-row">
         <label>Price Cache</label>
-        <div class="settings-note">Stores King Soopers prices so Auto-fill doesn't re-search every time. Clear it to force fresh prices.</div>
+        <div class="settings-note">Stores Walmart prices so Auto-fill doesn't re-search every time. Clear it to force fresh prices.</div>
       </div>
       <button class="settings-save-btn" style="background:#e53935" onclick="clearPriceCache()">Clear Price Cache</button>
       <div id="cache-status" style="font-size:12px;color:#34a853;margin-top:8px;min-height:16px"></div>
@@ -459,7 +459,7 @@ function parseFraction(s) {
 }
 function storeUrl(name, raw) {
   const u = (raw || '').trim();
-  return (u.startsWith('http') && !u.includes('...')) ? u : `https://www.kingsoopers.com/search?query=${encodeURIComponent(name)}`;
+  return (u.startsWith('http') && !u.includes('...')) ? u : `https://www.walmart.com/search?q=${encodeURIComponent(name)}`;
 }
 function openLink(url) { window.open(url, '_blank', 'noopener,noreferrer'); }
 
@@ -468,7 +468,7 @@ const SYSTEM_PROMPT_VISION = `You are a food cost and nutrition tracking assista
 When given a photo or description of food:
 1. Identify what was eaten (meal name, ingredients if home-cooked)
 2. Use web_search to find CURRENT real prices:
-   - Home meals: search grocery store prices (Walmart, Kroger, King Soopers) per ingredient
+   - Home meals: search grocery store prices (Walmart, Kroger) per ingredient
    - Restaurant meals: search the restaurant's current menu price for that item
 3. Estimate nutrition per serving: calories, protein (g), carbs (g), fat (g)
 4. Ask clarifying questions ONE AT A TIME if truly needed (max 2 questions)
@@ -638,7 +638,7 @@ function render() {
   let rows = entries.map((e, i) => {
     const ingrHtml = e.type === 'home' && e.ingredients && e.ingredients.length
       ? `<div class="ingr-list">${e.ingredients.map(ig =>
-          `<span>${maybeHighlight(ig.name)} — ${ig.portion || ig.amount || ''} @ $${parseFloat(ig.costPerPortion||0).toFixed(2)}${ig.productName ? ` <em style="color:#666;font-size:11px">(${ig.productName})</em>` : ''} <a href="javascript:void(0)" onclick="openLink('${(ig.sourceUrl||`https://www.google.com/search?q=${encodeURIComponent((ig.productName||ig.name)+' King Soopers price')}`).replace(/'/g,"\\'")}');" style="text-decoration:none" title="Verify price on Google">🔗</a></span>`
+          `<span>${maybeHighlight(ig.name)} — ${ig.portion || ig.amount || ''} @ $${parseFloat(ig.costPerPortion||0).toFixed(2)}${ig.productName ? ` <em style="color:#666;font-size:11px">(${ig.productName})</em>` : ''} <a href="javascript:void(0)" onclick="openLink('${(ig.sourceUrl||`https://www.google.com/search?q=${encodeURIComponent((ig.productName||ig.name)+' Walmart price')}`).replace(/'/g,"\\'")}');" style="text-decoration:none" title="Verify price on Google">🔗</a></span>`
         ).join('')}</div>`
       : '<em>—</em>';
     const nutrHtml = e.calories
@@ -1082,7 +1082,7 @@ async function autoFillIngredients() {
       const hit = getCachedIngr(ig.name);
       if (hit) {
         const pn = hit.productName || ig.name;
-        const url = hit.sourceUrl && hit.sourceUrl.startsWith('https://www.google.com') ? hit.sourceUrl : `https://www.google.com/search?q=${encodeURIComponent(pn + ' King Soopers price')}`;
+        const url = hit.sourceUrl && hit.sourceUrl.startsWith('https://www.google.com') ? hit.sourceUrl : `https://www.google.com/search?q=${encodeURIComponent(pn + ' Walmart price')}`;
         fromCache.push({ ...ig, storePrice: hit.storePrice, productName: pn, sourceUrl: url });
       }
       else needsSearch.push(ig);
@@ -1092,14 +1092,14 @@ async function autoFillIngredients() {
     const fromSearch = [];
     if (needsSearch.length > 0) {
       btn.textContent = `⏳ Looking up ${needsSearch.length} price${needsSearch.length > 1 ? 's' : ''}...`;
-      const PRICE_SYSTEM = `You are a grocery price finder. Use web_search to find current King Soopers prices for specific grocery products.
+      const PRICE_SYSTEM = `You are a grocery price finder. Use web_search to find current Walmart prices for specific grocery products.
 
 For each ingredient:
 1. Use the meal context to pick the correct product FORM:
    - sandwich → deli slices (e.g. "Hillshire Farm Oven Roasted Turkey Breast 9 oz"), NOT whole birds
    - tacos/burgers → ground beef, NOT steak
    - pasta/stir fry → boneless chicken breast, NOT whole chicken
-2. Search Google for: "King Soopers [specific product name] price"
+2. Search Google for: "Walmart [specific product name] price"
    Read the price AND the full brand/product name from the Google search snippet.
 3. Return the full specific product name exactly as shown (e.g. "Hillshire Farm Oven Roasted Turkey Breast, 9 oz").
 
@@ -1110,7 +1110,7 @@ IMPORTANT:
 
 Return ONLY a raw JSON array — no markdown, no other text:
 [{"name":"Deli Turkey","productName":"Hillshire Farm Oven Roasted Turkey Breast, 9 oz","storePrice":8.99}]`;
-      let pMsgs = [{ role: 'user', content: `Meal: "${name}"\nSearch Google for King Soopers prices for each ingredient. Use the meal context to pick the right product form. Find the full brand name + size and exact price from Google search results.\nIngredients: ${needsSearch.map(i => i.name).join(', ')}\nReturn only the JSON array.` }];
+      let pMsgs = [{ role: 'user', content: `Meal: "${name}"\nSearch Google for Walmart prices for each ingredient. Use the meal context to pick the right product form. Find the full brand name + size and exact price from Google search results.\nIngredients: ${needsSearch.map(i => i.name).join(', ')}\nReturn only the JSON array.` }];
       let pResp = await fetchClaude(getApiKey(), pMsgs, false, true, PRICE_SYSTEM, 4096);
       let safety = 0;
       while (pResp.stop_reason === 'tool_use' && safety++ < 8) {
@@ -1125,7 +1125,7 @@ Return ONLY a raw JSON array — no markdown, no other text:
         JSON.parse(pMatch[0]).forEach(p => {
           const ig = needsSearch.find(u => u.name.toLowerCase() === (p.name || '').toLowerCase()) || { name: p.name, portion: '' };
           const productName = p.productName || p.name || ig.name;
-          const verifyUrl = `https://www.google.com/search?q=${encodeURIComponent(productName + ' King Soopers price')}`;
+          const verifyUrl = `https://www.google.com/search?q=${encodeURIComponent(productName + ' Walmart price')}`;
           const entry = { ...ig, storePrice: parseFloat(String(p.storePrice).replace(/[^0-9.]/g, '')) || 0, productName, sourceUrl: verifyUrl };
           fromSearch.push(entry);
           setCachedIngr(entry.name, entry.storePrice, entry.sourceUrl, entry.productName);
