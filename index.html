@@ -792,9 +792,6 @@ function toggleVoice() {
 // =====================
 
 function openAIModal() {
-  if (!getApiKey()) {
-    alert('Please add your Anthropic API key in Settings (⚙️) first.'); return;
-  }
   if (!activeDate) { alert('Please select a date first.'); return; }
   resetAIModal();
   document.getElementById('ai-modal').classList.add('open');
@@ -1035,8 +1032,6 @@ async function autoFillIngredients() {
   const name = document.getElementById('f-name').value.trim();
   if (!name) { alert('Enter a meal name first.'); return; }
   if (document.getElementById('f-type').value !== 'home') return;
-  if (!getApiKey()) { alert('Add your Anthropic API key in Settings first.'); return; }
-
   const btn = document.getElementById('autofill-btn');
   btn.disabled = true;
   btn.textContent = '⏳ Filling...';
@@ -1206,8 +1201,6 @@ function downloadCSVFromModal() {
 async function lookupRestaurantPrice() {
   const name = document.getElementById('f-name').value.trim();
   if (!name) { alert('Enter the restaurant and meal name first.'); return; }
-  if (!getApiKey()) { alert('Add your Anthropic API key in Settings first.'); return; }
-
   const btn = document.getElementById('rest-lookup-btn');
   btn.disabled = true; btn.textContent = '⏳ Looking up...';
 
