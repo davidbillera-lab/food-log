@@ -1073,26 +1073,26 @@ async function autoFillIngredients() {
     const fromSearch = [];
     if (needsSearch.length > 0) {
       btn.textContent = `⏳ Looking up ${needsSearch.length} price${needsSearch.length > 1 ? 's' : ''}...`;
-      const PRICE_SYSTEM = `You are a grocery price finder. Use web_search to find current King Soopers (kingsoopers.com) prices for specific grocery products.
+      const PRICE_SYSTEM = `You are a grocery price finder. Use web_search to find current King Soopers prices for specific grocery products.
 
 For each ingredient:
-1. Consider the meal context to determine the correct FORM of the ingredient. Examples:
-   - "turkey" in a sandwich → deli turkey slices (e.g. Boar's Head or store brand, ~$8-12/lb package), NOT a whole turkey
-   - "chicken" in pasta → boneless chicken breast or rotisserie, NOT a whole roasting chicken
-   - "beef" in tacos → ground beef, NOT steak
-   Use the meal name as context to pick the right grocery product form.
-2. Search kingsoopers.com for that specific product.
-3. Find and return the DIRECT PRODUCT PAGE URL — it must contain "/p/" (e.g. https://www.kingsoopers.com/p/product-name/upc-code). Do NOT return search result pages or category pages.
-4. Return the price shown on that specific product listing.
+1. Use the meal context to pick the correct product FORM:
+   - sandwich → deli slices (turkey = deli turkey, salami = deli salami), NOT whole birds or chubs
+   - tacos/burgers → ground beef, NOT steak
+   - pasta/stir fry → boneless chicken breast, NOT whole chicken
+2. Search Google for: "King Soopers [specific product form] price site:kingsoopers.com"
+   The Google search snippet will show the price — read it from there.
+3. From the Google results, copy the direct King Soopers product URL (contains "/p/" like https://www.kingsoopers.com/p/product-name/0001234567890).
 
 IMPORTANT:
-- sourceUrl must be the direct product page URL you actually navigated to — never invent URLs, never return search pages
-- Prices must be realistic grocery store package prices for the correct form of the ingredient
-- If you cannot find a direct product page, set sourceUrl to null
+- Get the price from the Google search snippet — do NOT try to load kingsoopers.com pages (they require JavaScript and won't show prices)
+- sourceUrl must be a direct product page URL containing "/p/" — not a search page or category page
+- storePrice must be a number (e.g. 8.99) — never 0, never null; use your best estimate if snippet is unclear
+- Prices should be realistic package prices (deli turkey ~$7-12, salami ~$4-8, sandwich bread ~$3-5)
 
 Return ONLY a raw JSON array — no markdown, no other text:
-[{"name":"Turkey","storePrice":9.99,"sourceUrl":"https://www.kingsoopers.com/p/actual-product/upc"}]`;
-      let pMsgs = [{ role: 'user', content: `Meal: "${name}"\nFind King Soopers prices for these ingredients. Use the meal name to pick the right product form (e.g. sandwich = deli meat, not whole bird). For each ingredient, find the direct King Soopers product page URL (must contain /p/). Ingredients: ${needsSearch.map(i => i.name).join(', ')}. Return only the JSON array.` }];
+[{"name":"Deli Turkey","storePrice":8.99,"sourceUrl":"https://www.kingsoopers.com/p/hillshire-farm-oven-roasted-turkey-breast/0004470055085"}]`;
+      let pMsgs = [{ role: 'user', content: `Meal: "${name}"\nSearch Google for King Soopers prices for each ingredient. Use the meal context to pick the right product form. Get prices from Google search snippets (not by loading the product page). Find the direct product page URL (containing /p/) from search results.\nIngredients: ${needsSearch.map(i => i.name).join(', ')}\nReturn only the JSON array.` }];
       let pResp = await fetchClaude(getApiKey(), pMsgs, false, true, PRICE_SYSTEM, 4096);
       let safety = 0;
       while (pResp.stop_reason === 'tool_use' && safety++ < 8) {
@@ -1106,7 +1106,7 @@ Return ONLY a raw JSON array — no markdown, no other text:
       if (pMatch) {
         JSON.parse(pMatch[0]).forEach(p => {
           const ig = needsSearch.find(u => u.name.toLowerCase() === (p.name || '').toLowerCase()) || { name: p.name, portion: '' };
-          const entry = { ...ig, storePrice: p.storePrice || 0, sourceUrl: storeUrl(p.name || ig.name, p.sourceUrl) };
+          const entry = { ...ig, storePrice: parseFloat(String(p.storePrice).replace(/[^0-9.]/g, '')) || 0, sourceUrl: storeUrl(p.name || ig.name, p.sourceUrl) };
           fromSearch.push(entry);
           setCachedIngr(entry.name, entry.storePrice, entry.sourceUrl);
         });
