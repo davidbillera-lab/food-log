@@ -404,6 +404,13 @@
       </div>
       <button class="settings-save-btn" onclick="saveApiKey()">Save Key</button>
       <div class="key-status" id="key-status"></div>
+      <hr style="margin:18px 0;border:none;border-top:1px solid #eee">
+      <div class="settings-row">
+        <label>Price Cache</label>
+        <div class="settings-note">Stores King Soopers prices so Auto-fill doesn't re-search every time. Clear it to force fresh prices.</div>
+      </div>
+      <button class="settings-save-btn" style="background:#e53935" onclick="clearPriceCache()">Clear Price Cache</button>
+      <div id="cache-status" style="font-size:12px;color:#34a853;margin-top:8px;min-height:16px"></div>
     </div>
   </div>
 </div>
@@ -515,6 +522,12 @@ function openSettings() {
   document.getElementById('settings-modal').classList.add('open');
 }
 function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
+function clearPriceCache() {
+  localStorage.removeItem('ingr_price_cache');
+  const el = document.getElementById('cache-status');
+  el.textContent = 'Price cache cleared!';
+  setTimeout(() => { el.textContent = ''; }, 3000);
+}
 function saveApiKey() {
   const key = document.getElementById('api-key-input').value.trim();
   localStorage.setItem('anthropicKey', key);
