@@ -1,8 +1,22 @@
 #!/usr/bin/env python3
 """Serves the food log app, proxies Anthropic API calls, and stores food log data in memory."""
-import http.server, json, urllib.request, urllib.error, os, sys
+import http.server, json, urllib.request, urllib.error, os
 
+# Load .env for local development (Render sets env vars directly in its dashboard)
+def _load_dotenv():
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    k, v = line.split('=', 1)
+                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    except FileNotFoundError:
+        pass
+
+_load_dotenv()
 PORT = int(os.environ.get('PORT', 8080))
+API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 
 food_data = {}  # in-memory food log store; survives page reloads, cleared on server restart
 
@@ -22,7 +36,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path == '/proxy/messages':
             length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(length)
-            api_key = self.headers.get('x-api-key', '')
+            # Prefer server-side key from .env / Render env vars; fall back to client header
+            api_key = API_KEY or self.headers.get('x-api-key', '')
             req = urllib.request.Request(
                 'https://api.anthropic.com/v1/messages',
                 data=body,
