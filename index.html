@@ -625,7 +625,7 @@ function render() {
   let rows = entries.map((e, i) => {
     const ingrHtml = e.type === 'home' && e.ingredients && e.ingredients.length
       ? `<div class="ingr-list">${e.ingredients.map(ig =>
-          `<span>${maybeHighlight(ig.name)} — ${ig.portion || ig.amount || ''} @ $${parseFloat(ig.costPerPortion||0).toFixed(2)} <a href="javascript:void(0)" onclick="openLink('${storeUrl(ig.name, ig.sourceUrl).replace(/'/g,"\\'")}');" style="text-decoration:none">🔗</a></span>`
+          `<span>${maybeHighlight(ig.name)} — ${ig.portion || ig.amount || ''} @ $${parseFloat(ig.costPerPortion||0).toFixed(2)}${ig.productName ? ` <em style="color:#666;font-size:11px">(${ig.productName})</em>` : ''} <a href="javascript:void(0)" onclick="openLink('${(ig.sourceUrl||`https://www.google.com/search?q=${encodeURIComponent((ig.productName||ig.name)+' King Soopers price')}`).replace(/'/g,"\\'")}');" style="text-decoration:none" title="Verify price on Google">🔗</a></span>`
         ).join('')}</div>`
       : '<em>—</em>';
     const nutrHtml = e.calories
@@ -709,7 +709,8 @@ function addIngrRow() {
     <input class="ingr-store-price" type="number" step="0.01" min="0" placeholder="Store price $" oninput="updateCost(this.closest('.ingr-row'))">
     <input class="ingr-cost" type="text" placeholder="Cost/portion" readonly>
     <input class="ingr-url" type="hidden" value="">
-    <a class="ingr-link" href="javascript:void(0)" onclick="openLink(this.previousElementSibling.value)" style="display:none">🔗</a>
+    <input class="ingr-product-name" type="hidden" value="">
+    <a class="ingr-link" href="javascript:void(0)" onclick="openLink(this.previousElementSibling.previousElementSibling.value)" style="display:none">🔗</a>
     <button class="remove-ingr" onclick="this.parentElement.remove()">✕</button>`;
   document.getElementById('ingr-rows').appendChild(row);
 }
@@ -725,7 +726,8 @@ function saveMeal() {
       const storePrice = parseFloat(row.querySelector('.ingr-store-price').value) || 0;
       const costPerPortion = parseFraction(portion) * storePrice;
       const sourceUrl = row.querySelector('.ingr-url')?.value?.trim() || '';
-      if (n) { ingredients.push({ name: n, portion, storePrice, costPerPortion, sourceUrl }); totalCost += costPerPortion; }
+      const productName = row.querySelector('.ingr-product-name')?.value?.trim() || '';
+      if (n) { ingredients.push({ name: n, portion, storePrice, costPerPortion, sourceUrl, productName }); totalCost += costPerPortion; }
     });
   } else {
     const costEl = document.getElementById('f-rest-cost');
@@ -1026,9 +1028,9 @@ function showAIError(msg) {
 function ingCache() { return JSON.parse(localStorage.getItem('ingr_price_cache') || '{}'); }
 function saveIngCache(c) { localStorage.setItem('ingr_price_cache', JSON.stringify(c)); }
 function getCachedIngr(name) { return ingCache()[name.toLowerCase().trim()] || null; }
-function setCachedIngr(name, storePrice, sourceUrl) {
+function setCachedIngr(name, storePrice, sourceUrl, productName) {
   const c = ingCache();
-  c[name.toLowerCase().trim()] = { storePrice, sourceUrl };
+  c[name.toLowerCase().trim()] = { storePrice, sourceUrl, productName: productName || name };
   saveIngCache(c);
 }
 
@@ -1065,7 +1067,11 @@ async function autoFillIngredients() {
     const fromCache = [], needsSearch = [];
     ingredientList.forEach(ig => {
       const hit = getCachedIngr(ig.name);
-      if (hit) fromCache.push({ ...ig, storePrice: hit.storePrice, sourceUrl: storeUrl(ig.name, hit.sourceUrl) });
+      if (hit) {
+        const pn = hit.productName || ig.name;
+        const url = hit.sourceUrl && hit.sourceUrl.startsWith('https://www.google.com') ? hit.sourceUrl : `https://www.google.com/search?q=${encodeURIComponent(pn + ' King Soopers price')}`;
+        fromCache.push({ ...ig, storePrice: hit.storePrice, productName: pn, sourceUrl: url });
+      }
       else needsSearch.push(ig);
     });
 
@@ -1077,22 +1083,21 @@ async function autoFillIngredients() {
 
 For each ingredient:
 1. Use the meal context to pick the correct product FORM:
-   - sandwich → deli slices (turkey = deli turkey, salami = deli salami), NOT whole birds or chubs
+   - sandwich → deli slices (e.g. "Hillshire Farm Oven Roasted Turkey Breast 9 oz"), NOT whole birds
    - tacos/burgers → ground beef, NOT steak
    - pasta/stir fry → boneless chicken breast, NOT whole chicken
-2. Search Google for: "King Soopers [specific product form] price site:kingsoopers.com"
-   The Google search snippet will show the price — read it from there.
-3. From the Google results, copy the direct King Soopers product URL (contains "/p/" like https://www.kingsoopers.com/p/product-name/0001234567890).
+2. Search Google for: "King Soopers [specific product name] price"
+   Read the price AND the full brand/product name from the Google search snippet.
+3. Return the full specific product name exactly as shown (e.g. "Hillshire Farm Oven Roasted Turkey Breast, 9 oz").
 
 IMPORTANT:
-- Get the price from the Google search snippet — do NOT try to load kingsoopers.com pages (they require JavaScript and won't show prices)
-- sourceUrl must be a direct product page URL containing "/p/" — not a search page or category page
-- storePrice must be a number (e.g. 8.99) — never 0, never null; use your best estimate if snippet is unclear
-- Prices should be realistic package prices (deli turkey ~$7-12, salami ~$4-8, sandwich bread ~$3-5)
+- productName must be the full specific brand name + size as found in search results (e.g. "Boar's Head Ovengold Turkey, 7 oz" not just "Turkey")
+- storePrice must be a real number found in search results — never 0, never a guess
+- Prices should be realistic (deli turkey ~$5-10, salami ~$4-7, sandwich bread ~$3-5, mayo ~$3-5)
 
 Return ONLY a raw JSON array — no markdown, no other text:
-[{"name":"Deli Turkey","storePrice":8.99,"sourceUrl":"https://www.kingsoopers.com/p/hillshire-farm-oven-roasted-turkey-breast/0004470055085"}]`;
-      let pMsgs = [{ role: 'user', content: `Meal: "${name}"\nSearch Google for King Soopers prices for each ingredient. Use the meal context to pick the right product form. Get prices from Google search snippets (not by loading the product page). Find the direct product page URL (containing /p/) from search results.\nIngredients: ${needsSearch.map(i => i.name).join(', ')}\nReturn only the JSON array.` }];
+[{"name":"Deli Turkey","productName":"Hillshire Farm Oven Roasted Turkey Breast, 9 oz","storePrice":8.99}]`;
+      let pMsgs = [{ role: 'user', content: `Meal: "${name}"\nSearch Google for King Soopers prices for each ingredient. Use the meal context to pick the right product form. Find the full brand name + size and exact price from Google search results.\nIngredients: ${needsSearch.map(i => i.name).join(', ')}\nReturn only the JSON array.` }];
       let pResp = await fetchClaude(getApiKey(), pMsgs, false, true, PRICE_SYSTEM, 4096);
       let safety = 0;
       while (pResp.stop_reason === 'tool_use' && safety++ < 8) {
@@ -1106,9 +1111,11 @@ Return ONLY a raw JSON array — no markdown, no other text:
       if (pMatch) {
         JSON.parse(pMatch[0]).forEach(p => {
           const ig = needsSearch.find(u => u.name.toLowerCase() === (p.name || '').toLowerCase()) || { name: p.name, portion: '' };
-          const entry = { ...ig, storePrice: parseFloat(String(p.storePrice).replace(/[^0-9.]/g, '')) || 0, sourceUrl: storeUrl(p.name || ig.name, p.sourceUrl) };
+          const productName = p.productName || p.name || ig.name;
+          const verifyUrl = `https://www.google.com/search?q=${encodeURIComponent(productName + ' King Soopers price')}`;
+          const entry = { ...ig, storePrice: parseFloat(String(p.storePrice).replace(/[^0-9.]/g, '')) || 0, productName, sourceUrl: verifyUrl };
           fromSearch.push(entry);
-          setCachedIngr(entry.name, entry.storePrice, entry.sourceUrl);
+          setCachedIngr(entry.name, entry.storePrice, entry.sourceUrl, entry.productName);
         });
       }
       // Any that didn't come back from search: add with $0
@@ -1136,7 +1143,8 @@ Return ONLY a raw JSON array — no markdown, no other text:
         <input class="ingr-store-price" type="number" step="0.01" min="0" placeholder="Store price $" value="${parseFloat(ig.storePrice || 0).toFixed(2)}" oninput="updateCost(this.closest('.ingr-row'))">
         <input class="ingr-cost" type="text" placeholder="Cost/portion" readonly>
         <input class="ingr-url" type="hidden" value="${url.replace(/"/g, '&quot;')}">
-        <a class="ingr-link" href="javascript:void(0)" onclick="openLink(this.previousElementSibling.value)" style="${url ? '' : 'display:none'}">🔗</a>
+        <input class="ingr-product-name" type="hidden" value="${(ig.productName||'').replace(/"/g, '&quot;')}">
+        <a class="ingr-link" href="javascript:void(0)" onclick="openLink(this.previousElementSibling.previousElementSibling.value)" style="${url ? '' : 'display:none'}">🔗</a>
         <button class="remove-ingr" onclick="this.parentElement.remove()">✕</button>`;
       document.getElementById('ingr-rows').appendChild(row);
       updateCost(row);
