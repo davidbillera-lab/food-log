@@ -987,6 +987,16 @@ function showAIError(msg) {
     `<div style="color:#e53935;text-align:center;padding:8px;font-size:13px">❌ ${msg}</div>`;
 }
 
+// --- Ingredient price cache (localStorage) ---
+function ingCache() { return JSON.parse(localStorage.getItem('ingr_price_cache') || '{}'); }
+function saveIngCache(c) { localStorage.setItem('ingr_price_cache', JSON.stringify(c)); }
+function getCachedIngr(name) { return ingCache()[name.toLowerCase().trim()] || null; }
+function setCachedIngr(name, storePrice, sourceUrl) {
+  const c = ingCache();
+  c[name.toLowerCase().trim()] = { storePrice, sourceUrl };
+  saveIngCache(c);
+}
+
 // --- AI Auto-fill Ingredients ---
 async function autoFillIngredients() {
   const name = document.getElementById('f-name').value.trim();
@@ -998,35 +1008,17 @@ async function autoFillIngredients() {
   btn.disabled = true;
   btn.textContent = '⏳ Filling...';
 
-  const AUTOFILL_SYSTEM = `You are a grocery price finder. List the standard home-cooked ingredients for the given meal.
-Use web_search to find the current price of each ingredient on King Soopers (kingsoopers.com) or Safeway (safeway.com).
-Return ONLY a raw JSON array — no markdown, no other text:
-[{"name":"Ground Beef","portion":"1/4","storePrice":5.99,"sourceUrl":"https://www.kingsoopers.com/p/..."}]
-- portion: fraction of the package used for one serving (e.g. "1/4", "1/6")
-- storePrice: full package price in USD from the store search result
-- sourceUrl: direct product page URL from kingsoopers.com or safeway.com`;
-
   try {
-    let msgs = [{
+    // Step 1: Haiku lists ingredients + portions (no web search, fast)
+    const listData = await fetchClaude(getApiKey(), [{
       role: 'user',
-      content: `Find grocery prices for the ingredients needed to make "${name}" at home. Search King Soopers or Safeway for each ingredient and return the JSON array.`
-    }];
+      content: `List the standard home-cooked ingredients for "${name}". Reply ONLY with a raw JSON array, no markdown:\n[{"name":"Ground Beef","portion":"1/4"}, ...]\nPortion is the fraction of the full package used for one serving.`
+    }], false, false,
+    'You are a recipe ingredient estimator. Reply with only a raw JSON array with name and portion fields. No markdown, no prices, no other text.');
 
-    let response = await fetchClaude(getApiKey(), msgs, false, true, AUTOFILL_SYSTEM, 4096);
-    let safety = 0;
-    while (response.stop_reason === 'tool_use' && safety++ < 8) {
-      const toolBlocks = response.content.filter(b => b.type === 'tool_use');
-      msgs.push({ role: 'assistant', content: response.content });
-      msgs.push({ role: 'user', content: toolBlocks.map(b => ({
-        type: 'tool_result', tool_use_id: b.id,
-        content: b.content || []
-      }))});
-      response = await fetchClaude(getApiKey(), msgs, false, true, AUTOFILL_SYSTEM, 4096);
-    }
-
-    const text = response.content.find(b => b.type === 'text')?.text || '';
-    const match = text.match(/\[[\s\S]*\]/);
-    if (!match) {
+    const listText = listData.content.find(b => b.type === 'text')?.text || '';
+    const listMatch = listText.match(/\[[\s\S]*\]/);
+    if (!listMatch) {
       document.getElementById('f-type').value = 'restaurant';
       toggleIngredients();
       btn.disabled = false;
@@ -1034,10 +1026,58 @@ Return ONLY a raw JSON array — no markdown, no other text:
       lookupRestaurantPrice();
       return;
     }
-    const ingredients = JSON.parse(match[0]);
+    const ingredientList = JSON.parse(listMatch[0]);
+
+    // Step 2: Split into cache hits vs ingredients that need a price lookup
+    const fromCache = [], needsSearch = [];
+    ingredientList.forEach(ig => {
+      const hit = getCachedIngr(ig.name);
+      if (hit) fromCache.push({ ...ig, storePrice: hit.storePrice, sourceUrl: hit.sourceUrl });
+      else needsSearch.push(ig);
+    });
+
+    // Step 3: Web search only for the uncached ingredients
+    const fromSearch = [];
+    if (needsSearch.length > 0) {
+      btn.textContent = `⏳ Looking up ${needsSearch.length} price${needsSearch.length > 1 ? 's' : ''}...`;
+      const PRICE_SYSTEM = `You are a grocery price finder. Use web_search to find current prices on kingsoopers.com or safeway.com for the listed ingredients.
+Return ONLY a raw JSON array — no markdown, no other text:
+[{"name":"Ground Beef","storePrice":5.99,"sourceUrl":"https://www.kingsoopers.com/p/..."}]`;
+      let pMsgs = [{ role: 'user', content: `Search King Soopers or Safeway for the price of each: ${needsSearch.map(i => i.name).join(', ')}. Return only the JSON array.` }];
+      let pResp = await fetchClaude(getApiKey(), pMsgs, false, true, PRICE_SYSTEM, 4096);
+      let safety = 0;
+      while (pResp.stop_reason === 'tool_use' && safety++ < 8) {
+        const toolBlocks = pResp.content.filter(b => b.type === 'tool_use');
+        pMsgs.push({ role: 'assistant', content: pResp.content });
+        pMsgs.push({ role: 'user', content: toolBlocks.map(b => ({ type: 'tool_result', tool_use_id: b.id, content: b.content || [] })) });
+        pResp = await fetchClaude(getApiKey(), pMsgs, false, true, PRICE_SYSTEM, 4096);
+      }
+      const pText = pResp.content.find(b => b.type === 'text')?.text || '';
+      const pMatch = pText.match(/\[[\s\S]*\]/);
+      if (pMatch) {
+        JSON.parse(pMatch[0]).forEach(p => {
+          const ig = needsSearch.find(u => u.name.toLowerCase() === (p.name || '').toLowerCase()) || { name: p.name, portion: '' };
+          const entry = { ...ig, storePrice: p.storePrice || 0, sourceUrl: p.sourceUrl || '' };
+          fromSearch.push(entry);
+          setCachedIngr(entry.name, entry.storePrice, entry.sourceUrl);
+        });
+      }
+      // Any that didn't come back from search: add with $0
+      needsSearch.forEach(ig => {
+        if (!fromSearch.find(s => s.name.toLowerCase() === ig.name.toLowerCase()))
+          fromSearch.push({ ...ig, storePrice: 0, sourceUrl: '' });
+      });
+    }
+
+    // Step 4: Merge in original order, populate rows
+    const result = ingredientList.map(ig =>
+      fromCache.find(c => c.name.toLowerCase() === ig.name.toLowerCase()) ||
+      fromSearch.find(s => s.name.toLowerCase() === ig.name.toLowerCase()) ||
+      { ...ig, storePrice: 0, sourceUrl: '' }
+    );
 
     document.getElementById('ingr-rows').innerHTML = '';
-    ingredients.forEach(ig => {
+    result.forEach(ig => {
       const row = document.createElement('div');
       row.className = 'ingr-row';
       const url = ig.sourceUrl || '';
