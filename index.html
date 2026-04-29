@@ -143,7 +143,9 @@
   .ingr-section h4 { font-size: 13px; color: #555; margin-bottom: 8px; }
   #ingr-rows .ingr-row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
   #ingr-rows input { padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; flex: 1; min-width: 80px; }
-  #ingr-rows input.ingr-cost { max-width: 90px; flex: 0 0 90px; }
+  #ingr-rows input.ingr-portion { max-width: 90px; flex: 0 0 90px; }
+  #ingr-rows input.ingr-store-price { max-width: 100px; flex: 0 0 100px; }
+  #ingr-rows input.ingr-cost { max-width: 80px; flex: 0 0 80px; background: #f5f5f5; color: #555; cursor: default; }
   .remove-ingr { background: none; border: none; color: #e53935; cursor: pointer;
     font-size: 20px; min-width: 36px; min-height: 36px; padding: 0 4px; }
   #add-ingr-btn {
@@ -437,6 +439,13 @@ const DATES = (() => {
 
 const MEAL_LABEL = { B: 'Breakfast', L: 'Lunch', D: 'Dinner', S: 'Snack' };
 
+function parseFraction(s) {
+  s = String(s).trim();
+  const parts = s.split('/');
+  if (parts.length === 2) return parseFloat(parts[0]) / parseFloat(parts[1]);
+  return parseFloat(s) || 0;
+}
+
 const SYSTEM_PROMPT_VISION = `You are a food cost and nutrition tracking assistant.
 
 When given a photo or description of food:
@@ -577,7 +586,7 @@ function render() {
   let rows = entries.map((e, i) => {
     const ingrHtml = e.type === 'home' && e.ingredients && e.ingredients.length
       ? `<div class="ingr-list">${e.ingredients.map(ig =>
-          `<span>${maybeHighlight(ig.name)} — ${ig.amount} @ $${parseFloat(ig.costPerPortion||0).toFixed(2)}</span>`
+          `<span>${maybeHighlight(ig.name)} — ${ig.portion || ig.amount || ''} @ $${parseFloat(ig.costPerPortion||0).toFixed(2)}</span>`
         ).join('')}</div>`
       : '<em>—</em>';
     const nutrHtml = e.calories
@@ -647,13 +656,19 @@ function toggleIngredients() {
   document.getElementById('autofill-btn').style.display = isHome ? '' : 'none';
   document.getElementById('rest-lookup-btn').style.display = isHome ? 'none' : '';
 }
+function updateCost(row) {
+  const p = parseFraction(row.querySelector('.ingr-portion').value);
+  const sp = parseFloat(row.querySelector('.ingr-store-price').value) || 0;
+  row.querySelector('.ingr-cost').value = (p * sp).toFixed(2);
+}
 function addIngrRow() {
   const row = document.createElement('div');
   row.className = 'ingr-row';
   row.innerHTML = `
     <input class="ingr-name" type="text" placeholder="Ingredient">
-    <input class="ingr-amount" type="text" placeholder="Amount (e.g. 1 cup)">
-    <input class="ingr-cost" type="text" placeholder="$/portion">
+    <input class="ingr-portion" type="text" placeholder="Portion (e.g. 1/6)" oninput="updateCost(this.closest('.ingr-row'))">
+    <input class="ingr-store-price" type="number" step="0.01" min="0" placeholder="Store price $" oninput="updateCost(this.closest('.ingr-row'))">
+    <input class="ingr-cost" type="text" placeholder="Cost/portion" readonly>
     <button class="remove-ingr" onclick="this.parentElement.remove()">✕</button>`;
   document.getElementById('ingr-rows').appendChild(row);
 }
@@ -665,9 +680,10 @@ function saveMeal() {
   if (type === 'home') {
     document.querySelectorAll('#ingr-rows .ingr-row').forEach(row => {
       const n = row.querySelector('.ingr-name').value.trim();
-      const a = row.querySelector('.ingr-amount').value.trim();
-      const c = parseFloat(row.querySelector('.ingr-cost').value) || 0;
-      if (n) { ingredients.push({ name: n, amount: a, costPerPortion: c }); totalCost += c; }
+      const portion = row.querySelector('.ingr-portion').value.trim();
+      const storePrice = parseFloat(row.querySelector('.ingr-store-price').value) || 0;
+      const costPerPortion = parseFraction(portion) * storePrice;
+      if (n) { ingredients.push({ name: n, portion, storePrice, costPerPortion }); totalCost += costPerPortion; }
     });
   } else {
     const costEl = document.getElementById('f-rest-cost');
@@ -703,7 +719,7 @@ function renderSearchResults() {
       const dt = new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       const ingrHtml = (e.ingredients || []).length
         ? `<div class="ingr-list">${e.ingredients.map(ig =>
-            `<span>${maybeHighlight(ig.name)} — ${ig.amount} @ $${parseFloat(ig.costPerPortion||0).toFixed(2)}</span>`
+            `<span>${maybeHighlight(ig.name)} — ${ig.portion || ig.amount || ''} @ $${parseFloat(ig.costPerPortion||0).toFixed(2)}</span>`
           ).join('')}</div>` : '<em>—</em>';
       allRows += `<tr>
         <td>${dt}</td><td>${MEAL_LABEL[e.meal]}</td>
@@ -982,11 +998,11 @@ async function autoFillIngredients() {
     const messages = [{
       role: 'user',
       content: `List the standard home-cooked ingredients for "${name}". Reply with ONLY a JSON array, no markdown, no other text:
-[{"name":"Ground Beef","amount":"1/4 lb","costPerPortion":1.50}, ...]
-Use realistic US grocery prices for a single serving.`
+[{"name":"Ground Beef","portion":"1/4","storePrice":5.99}, ...]
+Use realistic US grocery store prices for the full package/unit.`
     }];
 
-    const data = await fetchClaude(getApiKey(), messages, false, false, 'You are a grocery ingredient cost estimator. Reply with only a raw JSON array of ingredients with name, amount, and costPerPortion fields. No markdown, no other text.');
+    const data = await fetchClaude(getApiKey(), messages, false, false, 'You are a grocery ingredient cost estimator. Reply with only a raw JSON array of ingredients with name, portion (as a fraction string like "1/6"), and storePrice (full package price in USD) fields. No markdown, no other text.');
     const text = data.content.find(b => b.type === 'text')?.text || '';
     const match = text.match(/\[[\s\S]*\]/);
     if (!match) {
@@ -1006,10 +1022,12 @@ Use realistic US grocery prices for a single serving.`
       row.className = 'ingr-row';
       row.innerHTML = `
         <input class="ingr-name" type="text" placeholder="Ingredient" value="${ig.name || ''}">
-        <input class="ingr-amount" type="text" placeholder="Amount" value="${ig.amount || ''}">
-        <input class="ingr-cost" type="text" placeholder="$/portion" value="${parseFloat(ig.costPerPortion || 0).toFixed(2)}">
+        <input class="ingr-portion" type="text" placeholder="Portion (e.g. 1/6)" value="${ig.portion || ''}" oninput="updateCost(this.closest('.ingr-row'))">
+        <input class="ingr-store-price" type="number" step="0.01" min="0" placeholder="Store price $" value="${parseFloat(ig.storePrice || 0).toFixed(2)}" oninput="updateCost(this.closest('.ingr-row'))">
+        <input class="ingr-cost" type="text" placeholder="Cost/portion" readonly>
         <button class="remove-ingr" onclick="this.parentElement.remove()">✕</button>`;
       document.getElementById('ingr-rows').appendChild(row);
+      updateCost(row);
     });
   } catch (err) {
     alert('Auto-fill failed: ' + err.message);
@@ -1020,7 +1038,7 @@ Use realistic US grocery prices for a single serving.`
 }
 
 // --- Export CSV (editable preview) ---
-const CSV_HEADERS = ['Date', 'Meal (B,L,D,S)', 'Home or Restaurant', 'Name of Meal', 'Ingredient', 'Amount', 'Cost (per portion)', 'Total Cost'];
+const CSV_HEADERS = ['Date', 'Meal (B,L,D,S)', 'Home or Restaurant', 'Name of Meal', 'Ingredient', 'Portion', 'Store Price', 'Cost (per portion)', 'Total Cost'];
 
 function buildExportRows(entries) {
   const dateLabel = new Date(activeDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -1028,11 +1046,11 @@ function buildExportRows(entries) {
   entries.forEach(e => {
     const type = e.type === 'home' ? 'Home' : 'Restaurant';
     if (e.type === 'restaurant') {
-      rows.push([dateLabel, e.meal, type, e.name, '', '', '', `$${(e.totalCost || 0).toFixed(2)}`]);
+      rows.push([dateLabel, e.meal, type, e.name, '', '', '', '', `$${(e.totalCost || 0).toFixed(2)}`]);
     } else {
       const ingrs = e.ingredients || [];
       if (!ingrs.length) {
-        rows.push([dateLabel, e.meal, type, e.name, '', '', '', `$${(e.totalCost || 0).toFixed(2)}`]);
+        rows.push([dateLabel, e.meal, type, e.name, '', '', '', '', `$${(e.totalCost || 0).toFixed(2)}`]);
       } else {
         ingrs.forEach((ig, i) => {
           rows.push([
@@ -1041,7 +1059,8 @@ function buildExportRows(entries) {
             i === 0 ? type : '',
             i === 0 ? e.name : '',
             ig.name || '',
-            ig.amount || '',
+            ig.portion || ig.amount || '',
+            ig.storePrice != null ? `$${parseFloat(ig.storePrice).toFixed(2)}` : '',
             `$${parseFloat(ig.costPerPortion || 0).toFixed(2)}`,
             i === ingrs.length - 1 ? `$${(e.totalCost || 0).toFixed(2)}` : ''
           ]);
@@ -1050,7 +1069,7 @@ function buildExportRows(entries) {
     }
   });
   const tc = entries.reduce((s, e) => s + (e.totalCost || 0), 0);
-  rows.push(['', '', '', '', '', '', 'DAILY TOTAL', `$${tc.toFixed(2)}`]);
+  rows.push(['', '', '', '', '', '', '', 'DAILY TOTAL', `$${tc.toFixed(2)}`]);
   return rows;
 }
 
