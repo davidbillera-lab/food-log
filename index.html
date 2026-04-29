@@ -1045,9 +1045,9 @@ async function autoFillIngredients() {
     // Step 1: Haiku lists ingredients + portions (no web search, fast)
     const listData = await fetchClaude(getApiKey(), [{
       role: 'user',
-      content: `List the standard home-cooked ingredients for "${name}". Reply ONLY with a raw JSON array, no markdown:\n[{"name":"Ground Beef","portion":"1/4"}, ...]\nPortion is the fraction of the full package used for one serving.`
+      content: `List the standard home-cooked ingredients for "${name}". Use context to pick the right product form (e.g. for a sandwich, turkey = deli turkey slices, not whole turkey). Reply ONLY with a raw JSON array, no markdown:\n[{"name":"Deli Turkey","portion":"1/4"}, ...]\nPortion is the fraction of the full store package used for one serving (e.g. if you use 1/4 of a deli package).`
     }], false, false,
-    'You are a recipe ingredient estimator. Reply with only a raw JSON array with name and portion fields. No markdown, no prices, no other text.');
+    'You are a recipe ingredient estimator. Use meal context to pick realistic grocery product forms (deli meat for sandwiches, ground beef for tacos, etc). Reply with only a raw JSON array with name and portion fields. No markdown, no prices, no other text.');
 
     const listText = listData.content.find(b => b.type === 'text')?.text || '';
     const listMatch = listText.match(/\[[\s\S]*\]/);
@@ -1073,12 +1073,26 @@ async function autoFillIngredients() {
     const fromSearch = [];
     if (needsSearch.length > 0) {
       btn.textContent = `⏳ Looking up ${needsSearch.length} price${needsSearch.length > 1 ? 's' : ''}...`;
-      const PRICE_SYSTEM = `You are a grocery price finder. Use web_search to find current prices on kingsoopers.com for the listed ingredients.
-For each ingredient: search "site:kingsoopers.com <ingredient name>", find the actual product page URL from search results, and record the price shown.
-IMPORTANT: sourceUrl must be the real URL you actually found in search results — never invent or guess a URL.
+      const PRICE_SYSTEM = `You are a grocery price finder. Use web_search to find current King Soopers (kingsoopers.com) prices for specific grocery products.
+
+For each ingredient:
+1. Consider the meal context to determine the correct FORM of the ingredient. Examples:
+   - "turkey" in a sandwich → deli turkey slices (e.g. Boar's Head or store brand, ~$8-12/lb package), NOT a whole turkey
+   - "chicken" in pasta → boneless chicken breast or rotisserie, NOT a whole roasting chicken
+   - "beef" in tacos → ground beef, NOT steak
+   Use the meal name as context to pick the right grocery product form.
+2. Search kingsoopers.com for that specific product.
+3. Find and return the DIRECT PRODUCT PAGE URL — it must contain "/p/" (e.g. https://www.kingsoopers.com/p/product-name/upc-code). Do NOT return search result pages or category pages.
+4. Return the price shown on that specific product listing.
+
+IMPORTANT:
+- sourceUrl must be the direct product page URL you actually navigated to — never invent URLs, never return search pages
+- Prices must be realistic grocery store package prices for the correct form of the ingredient
+- If you cannot find a direct product page, set sourceUrl to null
+
 Return ONLY a raw JSON array — no markdown, no other text:
-[{"name":"Ground Beef","storePrice":5.99,"sourceUrl":"https://www.kingsoopers.com/p/...actual-real-url..."}]`;
-      let pMsgs = [{ role: 'user', content: `Search King Soopers (kingsoopers.com) for the current price of each ingredient. For each one, find the actual product page URL from the search results — do not make up URLs. Ingredients: ${needsSearch.map(i => i.name).join(', ')}. Return only the JSON array.` }];
+[{"name":"Turkey","storePrice":9.99,"sourceUrl":"https://www.kingsoopers.com/p/actual-product/upc"}]`;
+      let pMsgs = [{ role: 'user', content: `Meal: "${name}"\nFind King Soopers prices for these ingredients. Use the meal name to pick the right product form (e.g. sandwich = deli meat, not whole bird). For each ingredient, find the direct King Soopers product page URL (must contain /p/). Ingredients: ${needsSearch.map(i => i.name).join(', ')}. Return only the JSON array.` }];
       let pResp = await fetchClaude(getApiKey(), pMsgs, false, true, PRICE_SYSTEM, 4096);
       let safety = 0;
       while (pResp.stop_reason === 'tool_use' && safety++ < 8) {
