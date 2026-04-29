@@ -452,7 +452,7 @@ function parseFraction(s) {
 }
 function storeUrl(name, raw) {
   const u = (raw || '').trim();
-  return (u.startsWith('http') && !u.includes('...')) ? u : `https://www.kingsoopers.com/search?query=${encodeURIComponent(name)}`;
+  return u.startsWith('https://www.kingsoopers.com/p/') ? u : `https://www.kingsoopers.com/search?query=${encodeURIComponent(name)}`;
 }
 function openLink(url) { window.open(url, '_blank', 'noopener,noreferrer'); }
 
@@ -625,7 +625,7 @@ function render() {
   let rows = entries.map((e, i) => {
     const ingrHtml = e.type === 'home' && e.ingredients && e.ingredients.length
       ? `<div class="ingr-list">${e.ingredients.map(ig =>
-          `<span>${maybeHighlight(ig.name)} — ${ig.portion || ig.amount || ''} @ $${parseFloat(ig.costPerPortion||0).toFixed(2)}${ig.productName ? ` <em style="color:#666;font-size:11px">(${ig.productName})</em>` : ''} <a href="javascript:void(0)" onclick="openLink('${(ig.sourceUrl||`https://www.google.com/search?q=${encodeURIComponent((ig.productName||ig.name)+' King Soopers price')}`).replace(/'/g,"\\'")}');" style="text-decoration:none" title="Verify price on King Soopers">🔗</a></span>`
+          `<span>${maybeHighlight(ig.name)} — ${ig.portion || ig.amount || ''} @ $${parseFloat(ig.costPerPortion||0).toFixed(2)}${ig.productName ? ` <em style="color:#666;font-size:11px">(${ig.productName})</em>` : ''} <a href="javascript:void(0)" onclick="openLink('${storeUrl(ig.productName||ig.name, ig.sourceUrl).replace(/'/g,"\\'")}');" style="text-decoration:none" title="View on King Soopers">🔗</a></span>`
         ).join('')}</div>`
       : '<em>—</em>';
     const nutrHtml = e.calories
@@ -1067,11 +1067,7 @@ async function autoFillIngredients() {
     const fromCache = [], needsSearch = [];
     ingredientList.forEach(ig => {
       const hit = getCachedIngr(ig.name);
-      if (hit) {
-        const pn = hit.productName || ig.name;
-        const url = hit.sourceUrl && hit.sourceUrl.startsWith('https://www.google.com') ? hit.sourceUrl : `https://www.google.com/search?q=${encodeURIComponent(pn + ' King Soopers price')}`;
-        fromCache.push({ ...ig, storePrice: hit.storePrice, productName: pn, sourceUrl: url });
-      }
+      if (hit) fromCache.push({ ...ig, storePrice: hit.storePrice, productName: hit.productName || ig.name, sourceUrl: storeUrl(ig.name, hit.sourceUrl) });
       else needsSearch.push(ig);
     });
 
@@ -1082,22 +1078,25 @@ async function autoFillIngredients() {
       const PRICE_SYSTEM = `You are a grocery price finder. Use web_search to find current King Soopers prices for specific grocery products.
 
 For each ingredient:
-1. Use the meal context to pick the correct product FORM:
+1. Use meal context to pick the right product FORM:
    - sandwich → deli slices (e.g. "Hillshire Farm Oven Roasted Turkey Breast 9 oz"), NOT whole birds
    - tacos/burgers → ground beef, NOT steak
    - pasta/stir fry → boneless chicken breast, NOT whole chicken
-2. Search Google for: "King Soopers [specific product name] price"
-   Read the price AND the full brand/product name from the Google search snippet.
-3. Return the full specific product name exactly as shown (e.g. "Hillshire Farm Oven Roasted Turkey Breast, 9 oz").
+2. Search Google for: "King Soopers [specific product] price"
+3. From the search results, find a result where BOTH are true:
+   - The snippet text shows a price (e.g. "$3.99")
+   - The URL starts with https://www.kingsoopers.com/p/
+4. Read the price from that snippet text — do NOT try to load the kingsoopers.com page (it requires JavaScript and won't show prices to a scraper).
+5. Copy the kingsoopers.com/p/ URL exactly as it appears in those search results.
 
 IMPORTANT:
-- productName must be the full specific brand name + size as found in search results (e.g. "Boar's Head Ovengold Turkey, 7 oz" not just "Turkey")
-- storePrice must be a real number found in search results — never 0, never a guess
-- Prices should be realistic (deli turkey ~$5-10, salami ~$4-7, sandwich bread ~$3-5, mayo ~$3-5)
+- sourceUrl must start with https://www.kingsoopers.com/p/ — never a Google URL, never a search/category page
+- productName must be the full brand name + size exactly as shown (e.g. "Hillshire Farm Oven Roasted Turkey Breast, 9 oz")
+- storePrice must be a real number read from the snippet — never 0, never a guess
 
 Return ONLY a raw JSON array — no markdown, no other text:
-[{"name":"Deli Turkey","productName":"Hillshire Farm Oven Roasted Turkey Breast, 9 oz","storePrice":8.99}]`;
-      let pMsgs = [{ role: 'user', content: `Meal: "${name}"\nSearch Google for King Soopers prices for each ingredient. Use the meal context to pick the right product form. Find the full brand name + size and exact price from Google search results.\nIngredients: ${needsSearch.map(i => i.name).join(', ')}\nReturn only the JSON array.` }];
+[{"name":"Deli Turkey","productName":"Hillshire Farm Oven Roasted Turkey Breast, 9 oz","storePrice":3.99,"sourceUrl":"https://www.kingsoopers.com/p/hillshire-farm-oven-roasted-turkey-breast/0004470055085"}]`;
+      let pMsgs = [{ role: 'user', content: `Meal: "${name}"\nFor each ingredient, search Google for its King Soopers price. Find a search result that shows both a price in the snippet AND has a kingsoopers.com/p/ URL. Read the price from the snippet text and copy the kingsoopers.com/p/ URL. Do not load the product page.\nIngredients: ${needsSearch.map(i => i.name).join(', ')}\nReturn only the JSON array.` }];
       let pResp = await fetchClaude(getApiKey(), pMsgs, false, true, PRICE_SYSTEM, 4096);
       let safety = 0;
       while (pResp.stop_reason === 'tool_use' && safety++ < 8) {
@@ -1112,8 +1111,7 @@ Return ONLY a raw JSON array — no markdown, no other text:
         JSON.parse(pMatch[0]).forEach(p => {
           const ig = needsSearch.find(u => u.name.toLowerCase() === (p.name || '').toLowerCase()) || { name: p.name, portion: '' };
           const productName = p.productName || p.name || ig.name;
-          const verifyUrl = `https://www.google.com/search?q=${encodeURIComponent(productName + ' King Soopers price')}`;
-          const entry = { ...ig, storePrice: parseFloat(String(p.storePrice).replace(/[^0-9.]/g, '')) || 0, productName, sourceUrl: verifyUrl };
+          const entry = { ...ig, storePrice: parseFloat(String(p.storePrice).replace(/[^0-9.]/g, '')) || 0, productName, sourceUrl: storeUrl(ig.name, p.sourceUrl) };
           fromSearch.push(entry);
           setCachedIngr(entry.name, entry.storePrice, entry.sourceUrl, entry.productName);
         });
