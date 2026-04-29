@@ -427,13 +427,17 @@
 </div>
 
 <script>
+// Rolling 30-day window: 20 days back through 9 days forward, always includes today
 const DATES = (() => {
   const d = [];
-  const start = new Date(2026, 3, 24);
-  for (let i = 0; i < 14; i++) {
-    const dt = new Date(start);
-    dt.setDate(start.getDate() + i);
-    d.push(dt.toISOString().slice(0, 10));
+  const today = new Date();
+  for (let i = -20; i <= 9; i++) {
+    const dt = new Date(today);
+    dt.setDate(today.getDate() + i);
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const day = String(dt.getDate()).padStart(2, '0');
+    d.push(`${y}-${m}-${day}`);
   }
   return d;
 })();
@@ -519,9 +523,38 @@ function updateKeyStatus() {
 
 // --- Data layer ---
 function loadAll() { try { return JSON.parse(localStorage.getItem('foodLog') || '{}'); } catch { return {}; } }
-function saveAll(data) { localStorage.setItem('foodLog', JSON.stringify(data)); }
+function saveAll(data) {
+  localStorage.setItem('foodLog', JSON.stringify(data));
+  // Fire-and-forget sync to server so data survives localStorage clears
+  fetch('/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).catch(() => {});
+}
 function getEntries(date) { return loadAll()[date] || []; }
 function saveEntries(date, entries) { const data = loadAll(); data[date] = entries; saveAll(data); }
+
+// --- Server sync on startup ---
+async function initData() {
+  try {
+    const resp = await fetch('/data');
+    if (!resp.ok) return;
+    const serverData = await resp.json();
+    const localData = loadAll();
+    const serverCount = Object.values(serverData).reduce((s, a) => s + a.length, 0);
+    const localCount  = Object.values(localData).reduce((s, a) => s + a.length, 0);
+
+    if (serverCount > 0 || localCount > 0) {
+      // Merge: for each date take whichever side has more entries
+      const merged = { ...localData };
+      Object.entries(serverData).forEach(([date, entries]) => {
+        if (!merged[date] || entries.length > merged[date].length) merged[date] = entries;
+      });
+      localStorage.setItem('foodLog', JSON.stringify(merged));
+      // Push merged back to server so both sides stay current
+      if (serverCount < Object.values(merged).reduce((s, a) => s + a.length, 0)) {
+        fetch('/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(merged) }).catch(() => {});
+      }
+    }
+  } catch {}
+}
 function getMonthlyTotal() {
   return Object.values(loadAll()).flat().reduce((s, e) => s + (e.totalCost || 0), 0);
 }
@@ -1219,8 +1252,11 @@ After getting the price, respond with ONLY this raw JSON (no markdown, no other 
 // Seed localStorage from config.js if no key saved yet
 if (!getApiKey() && window.ANTHROPIC_KEY) { localStorage.setItem('anthropicKey', window.ANTHROPIC_KEY); }
 
-buildSidebar();
-document.getElementById('monthly-cost').textContent = '$' + getMonthlyTotal().toFixed(2);
+// Pull any server-side data first, then render
+initData().finally(() => {
+  buildSidebar();
+  document.getElementById('monthly-cost').textContent = '$' + getMonthlyTotal().toFixed(2);
+});
 </script>
 </body>
 </html>

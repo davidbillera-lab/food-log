@@ -1,10 +1,23 @@
 #!/usr/bin/env python3
-"""Serves the food log app and proxies Anthropic API calls to avoid CORS."""
+"""Serves the food log app, proxies Anthropic API calls, and stores food log data in memory."""
 import http.server, json, urllib.request, urllib.error, os, sys
 
 PORT = int(os.environ.get('PORT', 8080))
 
+food_data = {}  # in-memory food log store; survives page reloads, cleared on server restart
+
 class Handler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/data':
+            result = json.dumps(food_data).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(result)
+        else:
+            super().do_GET()
+
     def do_POST(self):
         if self.path == '/proxy/messages':
             length = int(self.headers.get('Content-Length', 0))
@@ -35,6 +48,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
                 self.wfile.write(result)
+        elif self.path == '/data':
+            global food_data
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
+            try:
+                food_data = json.loads(body)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(b'{"ok":true}')
+            except Exception:
+                self.send_response(400)
+                self.end_headers()
         else:
             self.send_response(404)
             self.end_headers()
