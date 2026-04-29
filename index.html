@@ -463,6 +463,33 @@ function storeUrl(name, raw) {
 }
 function openLink(url) { window.open(url, '_blank', 'noopener,noreferrer'); }
 
+// Skill: look up a single Walmart product price via Haiku + web_search.
+// Returns {productName, storePrice, sourceUrl} or null if nothing found.
+async function lookupWalmartPrice(ingredientName, productHint, apiKey) {
+  const system = `You are a Walmart price finder. Use web_search to find the exact Walmart product page and current price.
+Search for the product on walmart.com and find a walmart.com/ip/ product URL with a price.
+Return ONLY a raw JSON object — no markdown, no other text:
+{"productName":"Full Brand Name Size","storePrice":3.97,"sourceUrl":"https://www.walmart.com/ip/product-name/123456789"}`;
+  let msgs = [{ role: 'user', content: `Find the Walmart price and direct product page URL for: ${productHint || ingredientName}\nReturn only the JSON object.` }];
+  let resp = await fetchClaude(apiKey, msgs, false, true, system, 1024, 'claude-haiku-4-5-20251001');
+  let safety = 0;
+  while (resp.stop_reason === 'tool_use' && safety++ < 5) {
+    const blocks = resp.content.filter(b => b.type === 'tool_use');
+    msgs.push({ role: 'assistant', content: resp.content });
+    msgs.push({ role: 'user', content: blocks.map(b => ({ type: 'tool_result', tool_use_id: b.id, content: b.content || [] })) });
+    resp = await fetchClaude(apiKey, msgs, false, true, system, 1024, 'claude-haiku-4-5-20251001');
+  }
+  const text = resp.content.find(b => b.type === 'text')?.text || '';
+  const m = text.match(/\{[\s\S]*?\}/);
+  if (!m) return null;
+  try {
+    const p = JSON.parse(m[0]);
+    const price = parseFloat(String(p.storePrice).replace(/[^0-9.]/g, '')) || 0;
+    if (price > 0) return { productName: p.productName || productHint || ingredientName, storePrice: price, sourceUrl: storeUrl(ingredientName, p.sourceUrl) };
+  } catch {}
+  return null;
+}
+
 const SYSTEM_PROMPT_VISION = `You are a food cost and nutrition tracking assistant.
 
 When given a photo or description of food:
@@ -945,9 +972,9 @@ async function runClaude() {
   }
 }
 
-async function fetchClaude(key, messages, hasImage, useSearch = false, systemOverride = null, maxTokens = 1024) {
+async function fetchClaude(key, messages, hasImage, useSearch = false, systemOverride = null, maxTokens = 1024, modelOverride = null) {
   const needsSonnet = hasImage || useSearch;
-  const model = needsSonnet ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001';
+  const model = modelOverride || (needsSonnet ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001');
   const system = systemOverride !== null ? systemOverride : (hasImage ? SYSTEM_PROMPT_VISION : SYSTEM_PROMPT_TEXT);
   const body = { model, max_tokens: maxTokens, system, messages };
   if (needsSonnet) body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
@@ -1134,6 +1161,22 @@ Return ONLY a raw JSON array — no markdown, no other text:
         if (!fromSearch.find(s => s.name.toLowerCase() === ig.name.toLowerCase()))
           fromSearch.push({ ...ig, storePrice: 0, sourceUrl: storeUrl(ig.name, '') });
       });
+
+      // Fallback: re-search with Haiku for any missing price or non-/ip/ link
+      const needsFallback = fromSearch.filter(e => e.storePrice === 0 || !e.sourceUrl.startsWith('https://www.walmart.com/ip/'));
+      if (needsFallback.length > 0) {
+        btn.textContent = `⏳ Verifying ${needsFallback.length} price${needsFallback.length > 1 ? 's' : ''}...`;
+        await Promise.all(needsFallback.map(async ig => {
+          const r = await lookupWalmartPrice(ig.name, ig.productName || ig.name, getApiKey()).catch(() => null);
+          if (r) {
+            const idx = fromSearch.findIndex(e => e.name.toLowerCase() === ig.name.toLowerCase());
+            if (idx >= 0) {
+              fromSearch[idx] = { ...fromSearch[idx], ...r };
+              setCachedIngr(ig.name, r.storePrice, r.sourceUrl, r.productName);
+            }
+          }
+        }));
+      }
     }
 
     // Step 4: Merge in original order, populate rows
