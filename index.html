@@ -464,16 +464,32 @@ function storeUrl(name, raw) {
 function openLink(url) { window.open(url, '_blank', 'noopener,noreferrer'); }
 
 // Skill: look up a single Walmart product price via Haiku + web_search.
+// Uses Google-snippet strategy: reads price from snippet text, copies walmart.com/ip/ URL from same result.
 // Returns {productName, storePrice, sourceUrl} or null if nothing found.
 async function lookupWalmartPrice(ingredientName, productHint, apiKey) {
-  const system = `You are a Walmart price finder. Use web_search to find the exact Walmart product page and current price.
-Search for the product on walmart.com and find a walmart.com/ip/ product URL with a price.
+  const system = `You are a Walmart grocery price finder. Your ONLY job is to find a real price and a direct walmart.com/ip/ product link.
+
+STRATEGY — follow these steps exactly:
+1. Use web_search with the query: "walmart [product name] price" (e.g. "walmart rolled oats price")
+2. Look through the search RESULTS LIST (not the Walmart page itself — do NOT follow any links).
+3. Find a result where:
+   a. The snippet text contains a dollar price like "$3.97" or "3.97"
+   b. The result URL starts with https://www.walmart.com/ip/
+4. Extract the price from the snippet text and copy the walmart.com/ip/ URL.
+5. If the first search has no result with both a price AND a walmart.com/ip/ URL, try one more search with a more specific brand name.
+
+CRITICAL RULES:
+- NEVER load or visit walmart.com pages — they use JavaScript and will show $0
+- storePrice MUST come from the Google snippet text, never from loading a page
+- sourceUrl MUST start with https://www.walmart.com/ip/ — never a google.com or search URL
+- storePrice must be a real number greater than 0
+
 Return ONLY a raw JSON object — no markdown, no other text:
 {"productName":"Full Brand Name Size","storePrice":3.97,"sourceUrl":"https://www.walmart.com/ip/product-name/123456789"}`;
-  let msgs = [{ role: 'user', content: `Find the Walmart price and direct product page URL for: ${productHint || ingredientName}\nReturn only the JSON object.` }];
+  let msgs = [{ role: 'user', content: `Find the Walmart price for: ${productHint || ingredientName}\nSearch Google for "walmart ${productHint || ingredientName} price", read the price from the snippet, copy the walmart.com/ip/ URL. Return only the JSON object.` }];
   let resp = await fetchClaude(apiKey, msgs, false, true, system, 1024, 'claude-haiku-4-5-20251001');
   let safety = 0;
-  while (resp.stop_reason === 'tool_use' && safety++ < 5) {
+  while (resp.stop_reason === 'tool_use' && safety++ < 6) {
     const blocks = resp.content.filter(b => b.type === 'tool_use');
     msgs.push({ role: 'assistant', content: resp.content });
     msgs.push({ role: 'user', content: blocks.map(b => ({ type: 'tool_result', tool_use_id: b.id, content: b.content || [] })) });
@@ -485,7 +501,10 @@ Return ONLY a raw JSON object — no markdown, no other text:
   try {
     const p = JSON.parse(m[0]);
     const price = parseFloat(String(p.storePrice).replace(/[^0-9.]/g, '')) || 0;
-    if (price > 0) return { productName: p.productName || productHint || ingredientName, storePrice: price, sourceUrl: storeUrl(ingredientName, p.sourceUrl) };
+    const url = (p.sourceUrl || '').trim();
+    if (price > 0 && url.startsWith('https://www.walmart.com/ip/')) {
+      return { productName: p.productName || productHint || ingredientName, storePrice: price, sourceUrl: url };
+    }
   } catch {}
   return null;
 }
@@ -1119,24 +1138,36 @@ async function autoFillIngredients() {
       btn.textContent = `⏳ Looking up ${needsSearch.length} price${needsSearch.length > 1 ? 's' : ''}...`;
       const PRICE_SYSTEM = `You are a grocery price finder. Use web_search to find current Walmart prices for specific grocery products.
 
-For each ingredient:
-1. Use the meal context to pick the correct product FORM:
+For each ingredient, follow these steps EXACTLY:
+
+STEP 1 — Pick the right product form using meal context:
    - sandwich → deli slices (e.g. "Hillshire Farm Oven Roasted Turkey Breast 9 oz"), NOT whole birds
    - tacos/burgers → ground beef, NOT steak
    - pasta/stir fry → boneless chicken breast, NOT whole chicken
-2. Search Google for: "Walmart [specific product name] price"
-3. Find a search result where the snippet shows a price (e.g. "$3.97") AND the URL is a walmart.com/ip/ product page.
-4. Read the price from that snippet. Copy the walmart.com/ip/ URL from that same result.
+   - oatmeal → rolled oats (e.g. "Quaker Old Fashioned Oats 42 oz")
 
-IMPORTANT:
-- storePrice must come from the Google snippet text — do NOT load walmart.com pages (they require JavaScript)
-- sourceUrl must be the walmart.com/ip/ URL from that same result — not a Google URL, not a search page
-- productName must be the full brand name + size (e.g. "Hillshire Farm Oven Roasted Turkey Breast, 9 oz")
-- storePrice must be a real number — never 0, never a guess
+STEP 2 — Search Google (NOT Walmart directly):
+   Use web_search with query: "walmart [specific product name] price"
+   Example: "walmart Hillshire Farm Oven Roasted Turkey Breast 9 oz price"
+
+STEP 3 — Read from the search RESULTS LIST only (do NOT click or load any page):
+   Scan each result in the list for one that has BOTH:
+   a. A dollar price in the snippet text (e.g. "$3.97", "Now $4.48")
+   b. A URL that starts with https://www.walmart.com/ip/
+   Extract the price from the snippet text. Copy the walmart.com/ip/ URL as-is.
+
+STEP 4 — If no result has both price + walmart.com/ip/ URL, try ONE more search with a different brand or size, then repeat Step 3.
+
+CRITICAL RULES — violations will break the app:
+- NEVER load or navigate to walmart.com — Walmart pages use JavaScript and return $0
+- storePrice MUST come from the Google snippet text, not from loading any page
+- sourceUrl MUST start with https://www.walmart.com/ip/ — never google.com, never a search URL
+- storePrice must be a real number greater than 0 — never 0, never a guess
+- productName must be the full brand name + size from the snippet
 
 Return ONLY a raw JSON array — no markdown, no other text:
 [{"name":"Deli Turkey","productName":"Hillshire Farm Oven Roasted Turkey Breast, 9 oz","storePrice":3.97,"sourceUrl":"https://www.walmart.com/ip/hillshire-farm-oven-roasted-turkey-breast/123456789"}]`;
-      let pMsgs = [{ role: 'user', content: `Meal: "${name}"\nSearch Google for Walmart prices for each ingredient. Use the meal context to pick the right product form. Find the full brand name + size and exact price from Google search results.\nIngredients: ${needsSearch.map(i => i.name).join(', ')}\nReturn only the JSON array.` }];
+      let pMsgs = [{ role: 'user', content: `Meal: "${name}"\n\nFor each ingredient below, search Google for "walmart [product name] price". Read the price from the Google snippet text. Copy the walmart.com/ip/ URL from that same result. Do NOT load any Walmart pages.\n\nIngredients: ${needsSearch.map(i => i.name).join(', ')}\n\nReturn only the JSON array.` }];
       let pResp = await fetchClaude(getApiKey(), pMsgs, false, true, PRICE_SYSTEM, 4096);
       let safety = 0;
       while (pResp.stop_reason === 'tool_use' && safety++ < 8) {
@@ -1151,9 +1182,14 @@ Return ONLY a raw JSON array — no markdown, no other text:
         JSON.parse(pMatch[0]).forEach(p => {
           const ig = needsSearch.find(u => u.name.toLowerCase() === (p.name || '').toLowerCase()) || { name: p.name, portion: '' };
           const productName = p.productName || p.name || ig.name;
-          const entry = { ...ig, storePrice: parseFloat(String(p.storePrice).replace(/[^0-9.]/g, '')) || 0, productName, sourceUrl: storeUrl(ig.name, p.sourceUrl) };
+          const price = parseFloat(String(p.storePrice).replace(/[^0-9.]/g, '')) || 0;
+          const rawUrl = (p.sourceUrl || '').trim();
+          // Only accept a direct walmart.com/ip/ URL — reject Google URLs and search pages
+          const validUrl = rawUrl.startsWith('https://www.walmart.com/ip/') ? rawUrl : '';
+          const entry = { ...ig, storePrice: price, productName, sourceUrl: validUrl || storeUrl(ig.name, '') };
           fromSearch.push(entry);
-          setCachedIngr(entry.name, entry.storePrice, entry.sourceUrl, entry.productName);
+          // Only cache if we got both a real price AND a direct product URL
+          if (price > 0 && validUrl) setCachedIngr(entry.name, entry.storePrice, entry.sourceUrl, entry.productName);
         });
       }
       // Any that didn't come back from search: add with $0
@@ -1162,13 +1198,15 @@ Return ONLY a raw JSON array — no markdown, no other text:
           fromSearch.push({ ...ig, storePrice: 0, sourceUrl: storeUrl(ig.name, '') });
       });
 
-      // Fallback: re-search with Haiku for any missing price or non-/ip/ link
+      // Fallback: re-search with Haiku for any entry missing a real price OR a direct walmart.com/ip/ URL
+      // This catches: $0 prices, Google URLs, search page URLs, and empty URLs
       const needsFallback = fromSearch.filter(e => e.storePrice === 0 || !e.sourceUrl.startsWith('https://www.walmart.com/ip/'));
       if (needsFallback.length > 0) {
         btn.textContent = `⏳ Verifying ${needsFallback.length} price${needsFallback.length > 1 ? 's' : ''}...`;
         await Promise.all(needsFallback.map(async ig => {
           const r = await lookupWalmartPrice(ig.name, ig.productName || ig.name, getApiKey()).catch(() => null);
-          if (r) {
+          // lookupWalmartPrice already validates price > 0 AND sourceUrl starts with walmart.com/ip/
+          if (r && r.storePrice > 0 && r.sourceUrl.startsWith('https://www.walmart.com/ip/')) {
             const idx = fromSearch.findIndex(e => e.name.toLowerCase() === ig.name.toLowerCase());
             if (idx >= 0) {
               fromSearch[idx] = { ...fromSearch[idx], ...r };
