@@ -451,6 +451,11 @@ const DATES = (() => {
 
 const MEAL_LABEL = { B: 'Breakfast', L: 'Lunch', D: 'Dinner', S: 'Snack' };
 
+// Detect whether the app is running as a local file (no Python server) or hosted
+function isLocalFile() {
+  return location.protocol === 'file:';
+}
+
 function parseFraction(s) {
   s = String(s).trim();
   const parts = s.split('/');
@@ -589,14 +594,16 @@ function updateKeyStatus() {
 function loadAll() { try { return JSON.parse(localStorage.getItem('foodLog') || '{}'); } catch { return {}; } }
 function saveAll(data) {
   localStorage.setItem('foodLog', JSON.stringify(data));
-  // Fire-and-forget sync to server so data survives localStorage clears
-  fetch('/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).catch(() => {});
+  // Fire-and-forget sync to server so data survives localStorage clears (skipped in local file mode)
+  if (!isLocalFile()) fetch('/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).catch(() => {});
 }
 function getEntries(date) { return loadAll()[date] || []; }
 function saveEntries(date, entries) { const data = loadAll(); data[date] = entries; saveAll(data); }
 
 // --- Server sync on startup ---
 async function initData() {
+  // Skip server sync when running as a local file — there is no server
+  if (isLocalFile()) return;
   try {
     const resp = await fetch('/data');
     if (!resp.ok) return;
@@ -998,12 +1005,20 @@ async function fetchClaude(key, messages, hasImage, useSearch = false, systemOve
   const body = { model, max_tokens: maxTokens, system, messages };
   if (needsSonnet) body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
 
-  const res = await fetch('/proxy/messages', {
+  // When running as a local file (file://), call Anthropic directly.
+  // When served by the Python server, use the proxy (keeps the API key server-side).
+  const url = isLocalFile()
+    ? 'https://api.anthropic.com/v1/messages'
+    : '/proxy/messages';
+
+  const res = await fetch(url, {
     method: 'POST',
     headers: {
       'x-api-key': key,
       'anthropic-version': '2023-06-01',
-      'content-type': 'application/json'
+      'content-type': 'application/json',
+      // Required by Anthropic CORS policy for direct browser calls
+      'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify(body)
   });
@@ -1307,7 +1322,14 @@ function downloadCSVFromModal() {
   const rows = Array.from(document.querySelectorAll('#export-table-wrap tbody tr')).map(tr =>
     Array.from(tr.querySelectorAll('input')).map(inp => inp.value)
   );
-  const esc = v => { const s = String(v); return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g, '""')}"` : s; };
+  // Wrap fraction-like values (e.g. 1/2, 3/4 cup) with ="..." so Excel
+  // treats them as text instead of auto-converting them to dates.
+  const isFraction = s => /^\d+\/\d+/.test(s.trim());
+  const esc = v => {
+    const s = String(v);
+    if (isFraction(s)) return `="${s.replace(/"/g, '""')}"`;
+    return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
   const csv = [CSV_HEADERS, ...rows].map(r => r.map(esc).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
@@ -1373,4 +1395,5 @@ initData().finally(() => {
 });
 </script>
 </body>
+</html>
 </html>
